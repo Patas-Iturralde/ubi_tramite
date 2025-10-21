@@ -1,0 +1,78 @@
+// Importa el paquete para generar IDs únicos
+import 'package:uuid/uuid.dart';
+
+/// Modelo de datos para representar una ubicación de oficina gubernamental
+class OfficeLocation {
+  /// Un identificador único para cada oficina.
+  final String id;
+  final String name;
+  final String description;
+  final double latitude;
+  final double longitude;
+
+  /// Constructor. Si no se provee un 'id', se genera uno automáticamente.
+  OfficeLocation({
+    String? id,
+    required this.name,
+    required this.description,
+    required this.latitude,
+    required this.longitude,
+  }) : id = id ?? const Uuid().v4();
+
+  /// Crea una copia del objeto con la posibilidad de modificar algunos campos.
+  OfficeLocation copyWith({
+    String? id,
+    String? name,
+    String? description,
+    double? latitude,
+    double? longitude,
+  }) {
+    return OfficeLocation(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+    );
+  }
+
+  /// Convierte el objeto a un Map (JSON). Requerido por la pantalla del mapa.
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'latitude': latitude,
+      'longitude': longitude,
+    };
+  }
+
+  /// Crea un objeto OfficeLocation desde un Map (JSON). Requerido por la pantalla del mapa.
+  factory OfficeLocation.fromJson(Map<String, dynamic> json) {
+    return OfficeLocation(
+      id: json['id'] as String?,
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'OfficeLocation(id: $id, name: $name, description: $description, lat: $latitude, lng: $longitude)';
+  }
+
+  /// La igualdad se basa únicamente en el 'id' único.
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is OfficeLocation && other.id == id;
+  }
+
+  /// El hashCode se basa únicamente en el 'id' único.
+  @override
+  int get hashCode {
+    return id.hashCode;
+  }
+}
