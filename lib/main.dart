@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
-import 'config/mapbox_config.dart';
-import 'screens/map_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   // Inicializar el binding de Flutter
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Inicializar Mapbox con el token de acceso
-  MapboxOptions.setAccessToken(MapboxConfig.accessToken);
   
   runApp(
     const ProviderScope(
@@ -50,7 +45,7 @@ class UbiTramiteApp extends StatelessWidget {
           elevation: 2,
         ),
       ),
-      home: const MapScreen(),
+      home: const SplashScreen(),
     );
   }
 }
