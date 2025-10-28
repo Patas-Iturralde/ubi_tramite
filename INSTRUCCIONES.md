@@ -1,4 +1,4 @@
-# Instrucciones de Ejecución - UbiTrámite
+# Instrucciones de Ejecución - TuGuiApp
 
 ## 🚀 Cómo ejecutar la aplicación
 

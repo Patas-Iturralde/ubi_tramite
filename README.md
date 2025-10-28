@@ -1,4 +1,4 @@
-# UbiTrámite
+# TuGuiApp
 
 Una aplicación Flutter para encontrar oficinas gubernamentales en Ecuador usando mapas interactivos.
 

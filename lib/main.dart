@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'screens/splash_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   // Inicializar el binding de Flutter
@@ -9,42 +10,22 @@ void main() {
   
   runApp(
     const ProviderScope(
-      child: UbiTramiteApp(),
+      child: TuGuiApp(),
     ),
   );
 }
 
-/// Aplicación principal UbiTrámite
-class UbiTramiteApp extends StatelessWidget {
-  const UbiTramiteApp({super.key});
+/// Aplicación principal TuGuiApp
+class TuGuiApp extends StatelessWidget {
+  const TuGuiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'UbiTrámite',
+      title: 'TuGuiApp',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 2,
-        ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 2,
-        ),
-      ),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
       home: const SplashScreen(),
     );
   }

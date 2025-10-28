@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 import '../config/mapbox_config.dart';
+import '../theme/app_colors.dart';
 import 'map_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -92,17 +93,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF1a1a2e),
-              Color(0xFF16213e),
-              Color(0xFF0f4c75),
-              Color(0xFF00a8cc),
-              Color(0xFF00d4aa),
-              Color(0xFF00ff88),
+              AppColors.darkBlue,
+              AppColors.mediumBlue,
+              AppColors.lightBlue,
+              AppColors.primaryColor,
+              AppColors.secondaryColor,
+              AppColors.brightGreen,
             ],
             stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
           ),
@@ -127,7 +128,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                       height: 4,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(2),
-                        color: Colors.white.withOpacity(0.2),
+                        color: AppColors.white.withOpacity(0.2),
                       ),
                       child: AnimatedBuilder(
                         animation: _progressAnimation,
@@ -138,7 +139,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                             child: Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(2),
-                                color: Colors.white.withOpacity(0.8),
+                                color: AppColors.white.withOpacity(0.8),
                               ),
                             ),
                           );

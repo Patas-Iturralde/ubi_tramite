@@ -1,4 +1,4 @@
-# 🎯 Solución para Posicionamiento Preciso de Marcadores - UbiTrámite
+# 🎯 Solución para Posicionamiento Preciso de Marcadores - TuGuiApp
 
 ## ✅ **Problema Resuelto**
 

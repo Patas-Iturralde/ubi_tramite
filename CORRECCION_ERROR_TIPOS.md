@@ -1,4 +1,4 @@
-# 🔧 Corrección de Error de Tipos - UbiTrámite
+# 🔧 Corrección de Error de Tipos - TuGuiApp
 
 ## ⚠️ **Error Identificado**
 

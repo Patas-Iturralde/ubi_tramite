@@ -1,7 +1,7 @@
 # Configuración del Splash Screen
 
 ## Descripción
-Se ha configurado un splash screen nativo para la aplicación UbiTrámite usando la imagen `fondo.jpeg` como fondo.
+Se ha configurado un splash screen nativo para la aplicación TuGuiApp usando la imagen `fondo.jpeg` como fondo.
 
 ## Configuración Implementada
 

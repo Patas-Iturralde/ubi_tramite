@@ -11,16 +11,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ubi_tramite/main.dart';
 
 void main() {
-  testWidgets('UbiTrámite app smoke test', (WidgetTester tester) async {
+  testWidgets('TuGuiApp app smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(
       const ProviderScope(
-        child: UbiTramiteApp(),
+        child: TuGuiApp(),
       ),
     );
 
     // Verify that our app shows the map screen
-    expect(find.text('UbiTrámite'), findsOneWidget);
+    expect(find.text('TuGuiApp'), findsOneWidget);
     expect(find.text('Cargando mapa...'), findsOneWidget);
   });
 }

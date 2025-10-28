@@ -1,4 +1,4 @@
-/// Configuración de Mapbox para la aplicación UbiTrámite
+/// Configuración de Mapbox para la aplicación TuGuiApp
 class MapboxConfig {
   /// Token de acceso público de Mapbox
   /// IMPORTANTE: En producción, considera usar variables de entorno

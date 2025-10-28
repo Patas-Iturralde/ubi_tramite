@@ -1,6 +1,6 @@
 {
-    "name": "ubi_tramite",
-    "short_name": "ubi_tramite",
+    "name": "TuGuiApp",
+    "short_name": "TuGuiApp",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

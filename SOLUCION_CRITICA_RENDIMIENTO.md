@@ -1,4 +1,4 @@
-# 🚨 Solución Crítica de Rendimiento - UbiTrámite
+# 🚨 Solución Crítica de Rendimiento - TuGuiApp
 
 ## ⚠️ **Problema Crítico Identificado**
 

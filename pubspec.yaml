@@ -1,4 +1,4 @@
-name: ubi_tramite
+name: tugui_app
 description: "Aplicación para encontrar oficinas gubernamentales en Ecuador"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -64,6 +64,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  
+  # Icon generator for Android/iOS
+  flutter_launcher_icons: ^0.13.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -116,3 +119,11 @@ flutter_native_splash:
   color: "#1a1a2e"
   android: true
   ios: true
+
+# Launcher icons configuration
+flutter_icons:
+  android: true
+  ios: true
+  image_path: assets/images/logo_main.jpeg
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/images/logo_main.jpeg

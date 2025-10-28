@@ -1,4 +1,4 @@
-# 🎯 Indicador Visual de Selección - UbiTrámite
+# 🎯 Indicador Visual de Selección - TuGuiApp
 
 ## ✨ Nueva Funcionalidad Implementada
 

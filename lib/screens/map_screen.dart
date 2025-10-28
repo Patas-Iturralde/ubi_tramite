@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,7 @@ import '../models/office_location.dart';
 import '../providers/location_provider.dart';
 import '../providers/offices_provider.dart';
 import '../config/mapbox_config.dart';
+import '../theme/app_colors.dart';
 import 'add_office_screen.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
@@ -21,7 +21,7 @@ class MapScreen extends ConsumerStatefulWidget {
   ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends ConsumerState<MapScreen> {
+class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateMixin {
   MapboxMap? mapboxMap;
   PointAnnotationManager? _pointAnnotationManager;
   Uint8List? _markerImage;
@@ -30,6 +30,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   String? _errorMessage;
   List<OfficeLocation> _offices = [];
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
+  // Animación para el panel desplegable
+  late AnimationController _panelController;
+  late Animation<double> _panelAnimation;
+  bool _isPanelExpanded = false;
 
   // Usar configuración centralizada
   static const double _defaultLatitude = MapboxConfig.defaultLatitude;
@@ -39,10 +44,30 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // Inicializar animación del panel
+    _panelController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _panelAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _panelController,
+      curve: Curves.easeInOut,
+    ));
+    
     _loadMarkerImage().then((_) {
       _clearCustomOffices();
       _initializeMap();
     });
+  }
+
+  @override
+  void dispose() {
+    _panelController.dispose();
+    super.dispose();
   }
 
   /// Limpia las oficinas personalizadas guardadas
@@ -99,12 +124,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _enableUserLocation();
     _addOfficeMarkers();
     _centerOnUserLocation();
-    
-    ref.listen(officesProvider, (previous, next) {
-      if (mounted && mapboxMap != null) {
-        _addOfficeMarkers();
-      }
-    });
   }
 
   /// Habilita la visualización de la ubicación del usuario en el mapa
@@ -122,10 +141,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _addOfficeMarkers() async {
     if (mapboxMap == null) return;
     try {
-      await ref.read(officesProvider.notifier).loadOffices();
+      // Solo cargar oficinas si no están ya cargadas
       final officesState = ref.read(officesProvider);
+      if (officesState.offices.isEmpty && !officesState.isLoading) {
+        await ref.read(officesProvider.notifier).loadOffices();
+      }
+      
+      final updatedOfficesState = ref.read(officesProvider);
       setState(() {
-        _offices = officesState.offices;
+        _offices = updatedOfficesState.offices;
       });
       await _addMapboxMarkers();
     } catch (e) {
@@ -271,6 +295,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
       MapAnimationOptions(duration: 1500),
     );
+    
+    // Cerrar el panel después de navegar
+    if (_isPanelExpanded) {
+      _togglePanel();
+    }
   }
 
   /// Construye el Drawer lateral con la lista de oficinas
@@ -279,29 +308,100 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       child: Column(
         children: [
           DrawerHeader(
-            decoration: BoxDecoration(color: Colors.blue[700]),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.darkBlue,
+                  AppColors.mediumBlue,
+                  AppColors.lightBlue,
+                ],
+              ),
+            ),
             child: const Center(
-              child: Text(
-                'Oficinas - UbiTrámite',
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.location_on,
+                    color: AppColors.white,
+                    size: 40,
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                'Oficinas - TuGuiApp',
+                    style: TextStyle(
+                      color: AppColors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
           Expanded(
             child: _offices.isEmpty
-                ? const Center(child: Text('No hay oficinas disponibles.'))
+                ? const Center(
+                    child: Text(
+                      'No hay oficinas disponibles.',
+                      style: TextStyle(
+                        color: AppColors.lightBlue,
+                        fontSize: 16,
+                      ),
+                    ),
+                  )
                 : ListView.builder(
+                    padding: const EdgeInsets.all(8),
                     itemCount: _offices.length,
                     itemBuilder: (context, index) {
                       final office = _offices[index];
-                      return ListTile(
-                        leading: const Icon(Icons.location_on, color: Colors.redAccent),
-                        title: Text(office.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                        subtitle: Text(office.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.overlayDark,
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryColor.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.location_on,
+                              color: AppColors.primaryColor,
+                            ),
+                          ),
+                          title: Text(
+                            office.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.darkBlue,
+                            ),
+                          ),
+                          subtitle: Text(
+                            office.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.darkBlue.withOpacity(0.8),
+                            ),
+                          ),
                         onTap: () {
                           Navigator.of(context).pop(); // Cerrar drawer
                           _showOfficeInfoDialog(office);
                         },
+                        ),
                       );
                     },
                   ),
@@ -316,9 +416,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: const Text('UbiTrámite'),
-        backgroundColor: Colors.blue[700],
-        foregroundColor: Colors.white,
+        title: const Text('TuGuiApp'),
+        backgroundColor: AppColors.secondaryColor,
+        foregroundColor: AppColors.white,
+        elevation: 0,
+        centerTitle: true,
       ),
       drawer: _buildDrawer(),
       body: SafeArea(
@@ -343,8 +445,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         child: FloatingActionButton(
                           heroTag: 'centerLocationFab',
                           onPressed: _centerOnUserLocation,
-                          backgroundColor: Colors.blue[700],
-                          child: const Icon(Icons.my_location, color: Colors.white),
+                          backgroundColor: AppColors.primaryColor,
+                          child: const Icon(Icons.my_location, color: AppColors.white),
                         ),
                       ),
                       Positioned(
@@ -360,11 +462,319 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                               await _addOfficeMarkers();
                             }
                           },
-                          backgroundColor: Colors.green[600],
-                          child: const Icon(Icons.add, color: Colors.white),
+                          backgroundColor: AppColors.secondaryColor,
+                          child: const Icon(Icons.add, color: AppColors.white),
                         ),
                       ),
+                      
+                      // Botón desplegable de oficinas
+                      _buildOfficesDropdownButton(),
                     ],
+                  ),
+      ),
+    );
+  }
+
+  /// Botón desplegable de oficinas desde abajo
+  Widget _buildOfficesDropdownButton() {
+    final officesState = ref.watch(officesProvider);
+    
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: AnimatedBuilder(
+        animation: _panelAnimation,
+        builder: (context, child) {
+          return Transform.translate(
+            offset: Offset(0, (1 - _panelAnimation.value) * 350),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.overlayDark,
+                    blurRadius: 15,
+                    offset: Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle para indicar que se puede deslizar
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.lightGrey,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  
+                  // Botón para expandir/contraer
+                  GestureDetector(
+                    onTap: _togglePanel,
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [AppColors.primaryColor, AppColors.secondaryColor],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.location_on,
+                              color: AppColors.white,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Oficinas Cercanas',
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.darkBlue,
+                                  ),
+                                ),
+                                Text(
+                                  '${officesState.offices.length} oficinas disponibles',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.mediumBlue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          AnimatedRotation(
+                            turns: _isPanelExpanded ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 300),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.keyboard_arrow_up,
+                                color: AppColors.primaryColor,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  // Panel expandible con lista de oficinas
+                  if (_isPanelExpanded) ...[
+                    Container(
+                      height: 350,
+                      child: officesState.isLoading
+                          ? const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+                                  ),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    'Cargando oficinas...',
+                                    style: TextStyle(color: AppColors.mediumBlue),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : officesState.error != null
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline,
+                                        color: AppColors.primaryColor,
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Error: ${officesState.error}',
+                                        style: const TextStyle(color: AppColors.mediumBlue),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : officesState.offices.isEmpty
+                                  ? const Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.location_off,
+                                            color: AppColors.lightGrey,
+                                            size: 48,
+                                          ),
+                                          SizedBox(height: 16),
+                                          Text(
+                                            'No hay oficinas disponibles',
+                                            style: TextStyle(color: AppColors.mediumBlue),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      itemCount: officesState.offices.length,
+                                      itemBuilder: (context, index) {
+                                        final office = officesState.offices[index];
+                                        return _buildOfficeCard(office);
+                                      },
+                                    ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
+  /// Alterna el estado del panel desplegable
+  void _togglePanel() {
+    setState(() {
+      _isPanelExpanded = !_isPanelExpanded;
+      if (_isPanelExpanded) {
+        _panelController.forward();
+      } else {
+        _panelController.reverse();
+      }
+    });
+  }
+
+  /// Tarjeta de oficina moderna
+  Widget _buildOfficeCard(OfficeLocation office) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.overlayDark.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: AppColors.lightGrey.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _navigateToOffice(office),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primaryColor, AppColors.secondaryColor],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.location_on,
+                    color: AppColors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        office.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.darkBlue,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        office.description,
+                        style: TextStyle(
+                          color: AppColors.mediumBlue,
+                          fontSize: 14,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.my_location,
+                            size: 14,
+                            color: AppColors.lightGrey,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${office.latitude.toStringAsFixed(4)}, ${office.longitude.toStringAsFixed(4)}',
+                            style: TextStyle(
+                              color: AppColors.lightGrey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios,
+                    color: AppColors.primaryColor,
+                    size: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
                   ),
       ),
     );

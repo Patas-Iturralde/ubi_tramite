@@ -1,4 +1,4 @@
-# Splash Screen Personalizado - UbiTrámite
+# Splash Screen Personalizado - TuGuiApp
 
 ## Descripción
 Se ha implementado una pantalla de splash personalizada en Flutter que muestra la imagen `fondo.jpeg` como fondo con una barra de progreso animada y efectos visuales.
@@ -8,7 +8,7 @@ Se ha implementado una pantalla de splash personalizada en Flutter que muestra l
 ### 🎨 **Diseño Visual**
 - **Imagen de fondo**: Usa `assets/images/fondo.jpeg` como fondo completo
 - **Logo personalizado**: Icono de ubicación con fondo circular y sombra
-- **Título y subtítulo**: "UbiTrámite" con descripción
+- **Título y subtítulo**: "TuGuiApp" con descripción
 - **Efectos visuales**: Sombras, gradientes y transparencias
 
 ### ⚡ **Animaciones**
@@ -47,7 +47,7 @@ class SplashScreen extends ConsumerStatefulWidget
 ### Elementos Visuales
 1. **Fondo**: Imagen `fondo.jpeg` con `BoxFit.cover`
 2. **Logo**: Icono circular con sombra
-3. **Título**: "UbiTrámite" con efectos de sombra
+3. **Título**: "TuGuiApp" con efectos de sombra
 4. **Subtítulo**: Descripción de la aplicación
 5. **Barra de progreso**: Gradiente azul-cyan animado
 6. **Texto de estado**: Cambia según el progreso

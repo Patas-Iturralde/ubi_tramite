@@ -1,4 +1,4 @@
-# 🏢 Funcionalidades de Oficinas Personalizadas - UbiTrámite
+# 🏢 Funcionalidades de Oficinas Personalizadas - TuGuiApp
 
 ## ✨ Nuevas Características Implementadas
 

@@ -1,4 +1,4 @@
-# 🎯 Solución para Marcadores Dinámicos - UbiTrámite
+# 🎯 Solución para Marcadores Dinámicos - TuGuiApp
 
 ## ✅ **Problema Resuelto**
 
