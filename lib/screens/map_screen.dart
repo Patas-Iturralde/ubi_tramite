@@ -13,6 +13,7 @@ import '../providers/location_provider.dart';
 import '../models/place_category.dart';
 import '../providers/offices_provider.dart';
 import '../providers/auth_provider.dart';
+import '../models/user_role.dart';
 import '../config/mapbox_config.dart';
 import '../theme/app_colors.dart';
 import 'add_office_screen.dart';
@@ -39,6 +40,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   List<String> _officeLabels = const [];
   final Map<String, OfficeLocation> _annotationIdToOffice = {};
   OnPointAnnotationClickListener? _pinClickListener;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   Uint8List? _markerImage;
   Uint8List? _startImage;
   Uint8List? _endImage;
@@ -122,6 +125,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   void dispose() {
     _etaTimer?.cancel();
     _zoomTimer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -1008,22 +1012,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [AppColors.primaryColor, AppColors.secondaryColor],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.location_on, color: AppColors.white, size: 24),
-                    ),
-                    const SizedBox(width: 16),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
                             'Oficinas Cercanas',
@@ -1044,7 +1035,32 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 30),
+              // Buscador
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar oficinas...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF222222) : Colors.grey.shade100,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               if (officesState.isLoading)
                 const Padding(
                   padding: EdgeInsets.all(24),
@@ -1072,6 +1088,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 )
               else
                 ...officesState.offices
+                    .where((o) {
+                      if (_searchQuery.isEmpty) return true;
+                      final q = _searchQuery.toLowerCase();
+                      return o.name.toLowerCase().contains(q) ||
+                             o.description.toLowerCase().contains(q);
+                    })
                     .map((o) => Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: _buildOfficeCard(o),
@@ -1091,10 +1113,22 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// Tarjeta de oficina moderna
   Widget _buildOfficeCard(OfficeLocation office) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final roleAsync = ref.watch(userRoleProvider);
     final cardBg = isDark ? const Color(0xFF252525) : AppColors.white;
     final borderCol = isDark ? Colors.white10 : AppColors.lightGrey.withOpacity(0.3);
     final titleCol = isDark ? Colors.white : AppColors.darkBlue;
     final bodyCol = isDark ? Colors.white70 : AppColors.mediumBlue;
+
+    String? _scheduleFrom(OfficeLocation o) {
+      if (o.schedule != null && o.schedule!.trim().isNotEmpty) return o.schedule!.trim();
+      final match = RegExp(r'Horario:\s*(.*)', caseSensitive: false).firstMatch(o.description);
+      final value = match?.group(1)?.trim();
+      if (value == null || value.isEmpty) return null;
+      return value;
+    }
+    String _cleanDescription(String text) {
+      return text.replaceAll(RegExp(r'\n?\s*Horario:\s*.*', caseSensitive: false), '').trim();
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1155,7 +1189,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        office.description,
+                        _cleanDescription(office.description),
                         style: TextStyle(
                           color: bodyCol,
                           fontSize: 14,
@@ -1200,6 +1234,28 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           );
                         },
                       ),
+                      const SizedBox(height: 6),
+                      if (_scheduleFrom(office) != null)
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule,
+                              size: 14,
+                              color: isDark ? Colors.white54 : AppColors.lightGrey,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _scheduleFrom(office)!,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white60 : AppColors.lightGrey,
+                                  fontSize: 12,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
@@ -1215,6 +1271,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     size: 16,
                   ),
                 ),
+                if (roleAsync.value == UserRole.admin) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Editar',
+                    icon: Icon(Icons.edit, color: isDark ? Colors.white70 : AppColors.darkBlue),
+                    onPressed: () => _showEditOfficeSheet(office),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1222,6 +1286,126 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       ),
     );
   }
+
+  Future<void> _showEditOfficeSheet(OfficeLocation office) async {
+    final nameCtrl = TextEditingController(text: office.name);
+    final descCtrl = TextEditingController(text: office.description);
+    final schedCtrl = TextEditingController(text: office.schedule ?? '');
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    Future<void> _pickSchedule() async {
+      final now = TimeOfDay.now();
+      final start = await showTimePicker(
+        context: context,
+        initialTime: now,
+        helpText: 'Selecciona hora de inicio',
+      );
+      if (start == null) return;
+      final end = await showTimePicker(
+        context: context,
+        initialTime: start.replacing(hour: (start.hour + 1) % 24),
+        helpText: 'Selecciona hora de fin',
+      );
+      if (end == null) return;
+      final startStr = start.format(context);
+      final endStr = end.format(context);
+      schedCtrl.text = '$startStr - $endStr';
+    }
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1F1F1F) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Editar oficina', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Descripción',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: schedCtrl,
+                readOnly: true,
+                onTap: _pickSchedule,
+                decoration: InputDecoration(
+                  labelText: 'Horario',
+                  hintText: 'Selecciona el horario',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.access_time),
+                  suffixIcon: IconButton(
+                    tooltip: 'Elegir horario',
+                    icon: const Icon(Icons.schedule),
+                    onPressed: _pickSchedule,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final ok = await ref.read(officesProvider.notifier)
+                            .deleteCustomOffice(office.name);
+                        if (ok && mounted) Navigator.of(ctx).pop();
+                      },
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Borrar'),
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final updated = office.copyWith(
+                          name: nameCtrl.text.trim(),
+                          description: descCtrl.text.trim(),
+                          schedule: schedCtrl.text.trim(),
+                        );
+                        final ok = await ref.read(officesProvider.notifier)
+                            .addCustomOffice(updated);
+                        if (ok && mounted) Navigator.of(ctx).pop();
+                      },
+                      icon: const Icon(Icons.save),
+                      label: const Text('Guardar'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Sincronización de descripción/horario ahora separadas en el modelo
 }
 
 class _PointTapListener extends OnPointAnnotationClickListener {

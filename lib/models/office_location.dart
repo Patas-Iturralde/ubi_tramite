@@ -8,6 +8,7 @@ class OfficeLocation {
   final String id;
   final String name;
   final String description;
+  final String? schedule;
   final double latitude;
   final double longitude;
   final PlaceCategory category;
@@ -17,6 +18,7 @@ class OfficeLocation {
     String? id,
     required this.name,
     required this.description,
+    this.schedule,
     required this.latitude,
     required this.longitude,
     this.category = PlaceCategory.publicInstitutions,
@@ -27,6 +29,7 @@ class OfficeLocation {
     String? id,
     String? name,
     String? description,
+    String? schedule,
     double? latitude,
     double? longitude,
     PlaceCategory? category,
@@ -35,6 +38,7 @@ class OfficeLocation {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      schedule: schedule ?? this.schedule,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       category: category ?? this.category,
@@ -47,6 +51,7 @@ class OfficeLocation {
       'id': id,
       'name': name,
       'description': description,
+      'schedule': schedule,
       'latitude': latitude,
       'longitude': longitude,
       'category': category.storageValue,
@@ -59,6 +64,7 @@ class OfficeLocation {
       id: json['id'] as String?,
       name: json['name'] ?? '',
       description: json['description'] ?? '',
+      schedule: json['schedule'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       category: PlaceCategoryX.fromStorageValue(json['category'] as String?),
@@ -67,7 +73,7 @@ class OfficeLocation {
 
   @override
   String toString() {
-    return 'OfficeLocation(id: $id, name: $name, description: $description, lat: $latitude, lng: $longitude, category: ${category.storageValue})';
+    return 'OfficeLocation(id: $id, name: $name, description: $description, schedule: $schedule, lat: $latitude, lng: $longitude, category: ${category.storageValue})';
   }
 
   /// La igualdad se basa únicamente en el 'id' único.

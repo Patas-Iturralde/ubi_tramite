@@ -131,8 +131,10 @@ class OfficesNotifier extends StateNotifier<OfficesState> {
     if (query.isEmpty) return state.offices;
     
     return state.offices.where((office) {
-      return office.name.toLowerCase().contains(query.toLowerCase()) ||
-             office.description.toLowerCase().contains(query.toLowerCase());
+      final q = query.toLowerCase();
+      return office.name.toLowerCase().contains(q) ||
+             office.description.toLowerCase().contains(q) ||
+             (office.schedule?.toLowerCase().contains(q) ?? false);
     }).toList();
   }
 }

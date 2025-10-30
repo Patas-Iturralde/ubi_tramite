@@ -19,6 +19,8 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _scheduleController = TextEditingController();
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
   double? _selectedLatitude;
   double? _selectedLongitude;
   
@@ -94,6 +96,29 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
     }
   }
 
+  Future<void> _pickSchedule() async {
+    final now = TimeOfDay.now();
+    final start = await showTimePicker(
+      context: context,
+      initialTime: _startTime ?? now,
+      helpText: 'Selecciona hora de inicio',
+    );
+    if (start == null) return;
+    final end = await showTimePicker(
+      context: context,
+      initialTime: _endTime ?? start.replacing(hour: (start.hour + 1) % 24),
+      helpText: 'Selecciona hora de fin',
+    );
+    if (end == null) return;
+    setState(() {
+      _startTime = start;
+      _endTime = end;
+      final startStr = start.format(context);
+      final endStr = end.format(context);
+      _scheduleController.text = '$startStr - $endStr';
+    });
+  }
+
   /// Guarda la nueva oficina
   Future<void> _saveOffice() async {
     if (!_formKey.currentState!.validate()) return;
@@ -113,7 +138,8 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
 
       final office = OfficeLocation(
         name: _nameController.text.trim(),
-        description: '${_descriptionController.text.trim()}\n\nHorario: ${_scheduleController.text.trim()}',
+        description: _descriptionController.text.trim(),
+        schedule: _scheduleController.text.trim(),
         latitude: _selectedLatitude!,
         longitude: _selectedLongitude!,
       );
@@ -220,12 +246,19 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
                     // Horario de atención
                     TextFormField(
                       controller: _scheduleController,
-                      decoration: const InputDecoration(
+                      readOnly: true,
+                      decoration: InputDecoration(
                         labelText: 'Horario de atención *',
-                        hintText: 'Ej: Lunes a Viernes 8:00-17:00',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.schedule),
+                        hintText: 'Selecciona el horario',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.access_time),
+                        suffixIcon: IconButton(
+                          tooltip: 'Elegir horario',
+                          icon: const Icon(Icons.schedule),
+                          onPressed: _pickSchedule,
+                        ),
                       ),
+                      onTap: _pickSchedule,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'El horario es obligatorio';
