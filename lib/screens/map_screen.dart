@@ -9,9 +9,11 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/office_location.dart';
 import '../providers/location_provider.dart';
 import '../providers/offices_provider.dart';
+import '../providers/auth_provider.dart';
 import '../config/mapbox_config.dart';
 import '../theme/app_colors.dart';
 import 'add_office_screen.dart';
+import '../services/auth_service.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
 class MapScreen extends ConsumerStatefulWidget {
@@ -421,6 +423,17 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         foregroundColor: AppColors.white,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              try {
+                await AuthService.signOut();
+              } catch (_) {}
+            },
+            tooltip: 'Cerrar sesión',
+          )
+        ],
       ),
       drawer: _buildDrawer(),
       body: SafeArea(
@@ -449,23 +462,31 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           child: const Icon(Icons.my_location, color: AppColors.white),
                         ),
                       ),
-                      Positioned(
-                        bottom: 20,
-                        right: 20,
-                        child: FloatingActionButton(
-                          heroTag: 'addOfficeFab',
-                          onPressed: () async {
-                            await Navigator.of(context).push<bool>(
-                              MaterialPageRoute(builder: (context) => const AddOfficeScreen()),
-                            );
-                            if (mounted) {
-                              await _addOfficeMarkers();
-                            }
-                          },
-                          backgroundColor: AppColors.secondaryColor,
-                          child: const Icon(Icons.add, color: AppColors.white),
-                        ),
-                      ),
+                      Consumer(builder: (context, ref, _) {
+                        final roleAsync = ref.watch(userRoleProvider);
+                        final isAdmin = roleAsync.maybeWhen(
+                          data: (r) => r.toString().contains('admin'),
+                          orElse: () => false,
+                        );
+                        if (!isAdmin) return const SizedBox.shrink();
+                        return Positioned(
+                          bottom: 20,
+                          right: 20,
+                          child: FloatingActionButton(
+                            heroTag: 'addOfficeFab',
+                            onPressed: () async {
+                              await Navigator.of(context).push<bool>(
+                                MaterialPageRoute(builder: (context) => const AddOfficeScreen()),
+                              );
+                              if (mounted) {
+                                await _addOfficeMarkers();
+                              }
+                            },
+                            backgroundColor: AppColors.secondaryColor,
+                            child: const Icon(Icons.add, color: AppColors.white),
+                          ),
+                        );
+                      }),
                       
                       // Botón desplegable de oficinas
                       _buildOfficesDropdownButton(),
