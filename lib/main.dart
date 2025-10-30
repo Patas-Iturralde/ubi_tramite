@@ -24,13 +24,23 @@ Future<void> main() async {
 }
 
 /// Aplicación principal TuGuiApp
-class TuGuiApp extends ConsumerWidget {
+class TuGuiApp extends ConsumerStatefulWidget {
   const TuGuiApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Cargar preferencia de tema una sola vez al arrancar
+  ConsumerState<TuGuiApp> createState() => _TuGuiAppState();
+}
+
+class _TuGuiAppState extends ConsumerState<TuGuiApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Cargar preferencia de tema una sola vez al arrancar, fuera de build
     ref.read(themeModeProvider.notifier).loadOnce();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'TuGuiApp',

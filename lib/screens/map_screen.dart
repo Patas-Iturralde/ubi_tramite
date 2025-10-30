@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 
 import '../models/office_location.dart';
 import '../providers/location_provider.dart';
@@ -49,6 +50,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   static const double _defaultLatitude = MapboxConfig.defaultLatitude;
   static const double _defaultLongitude = MapboxConfig.defaultLongitude;
   static const double _defaultZoom = MapboxConfig.defaultZoom;
+  
+  // Ubicación actual precalculada (evitar modificar providers durante build)
+  Future<geo.Position?>? _positionFuture;
 
   @override
   void initState() {
@@ -56,6 +60,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     
     _loadMarkerImage().then((_) {
       _initializeMap();
+    });
+
+    // Disparar la obtención de ubicación después del primer frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      setState(() {
+        _positionFuture = ref.read(locationProvider.notifier).getCurrentPosition();
+      });
     });
   }
 
@@ -248,9 +259,28 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         const Icon(Icons.my_location, size: 18, color: AppColors.primaryColor),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            'Lat ${office.latitude.toStringAsFixed(6)} • Lng ${office.longitude.toStringAsFixed(6)}',
-                            style: TextStyle(fontSize: 12, color: textColor),
+                          child: FutureBuilder<geo.Position?>(
+                            future: _positionFuture,
+                            builder: (context, snap) {
+                              String text = 'Distancia desconocida';
+                              if (snap.connectionState == ConnectionState.waiting) {
+                                text = 'Calculando distancia…';
+                              } else if (snap.data != null) {
+                                final pos = snap.data!;
+                                final meters = geo.Geolocator.distanceBetween(
+                                  pos.latitude,
+                                  pos.longitude,
+                                  office.latitude,
+                                  office.longitude,
+                                );
+                                final km = (meters / 1000.0);
+                                text = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
+                              }
+                              return Text(
+                                text,
+                                style: TextStyle(fontSize: 12, color: textColor),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -421,14 +451,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
       _routePolylines = [shadowLine, mainLine, highlightLine];
 
-      // Puntos de inicio y fin
-      final start = await _routePointManager!.create(
-        PointAnnotationOptions(
-          geometry: Point(coordinates: Position(position.longitude, position.latitude)),
-          image: _startImage,
-          iconSize: 0.25,
-        ),
-      );
+      // Punto de fin únicamente (no mostrar icono en el inicio de la ruta)
       final end = await _routePointManager!.create(
         PointAnnotationOptions(
           geometry: Point(coordinates: Position(office.longitude, office.latitude)),
@@ -436,7 +459,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           iconSize: 0.28,
         ),
       );
-      _routeEndpoints = [start, end];
+      _routeEndpoints = [end];
 
       // Ajustar cámara aproximadamente al destino
       await _navigateToOffice(office);
@@ -659,8 +682,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         onMapCreated: _onMapCreated,
                       ),
                       Positioned(
-                        top: 30,
-                        left: 20,
+                        top: 55,
+                        left: 5,
                         child: FloatingActionButton(
                           heroTag: 'centerLocationFab',
                           tooltip: 'Centrar en mi ubicación',
@@ -676,8 +699,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           orElse: () => false,
                         );
                         return Positioned(
-                          top: 30,
-                          right: 20,
+                          top: 55,
+                          right: 5,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.end,
@@ -858,20 +881,26 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   /// Tarjeta de oficina moderna
   Widget _buildOfficeCard(OfficeLocation office) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF252525) : AppColors.white;
+    final borderCol = isDark ? Colors.white10 : AppColors.lightGrey.withOpacity(0.3);
+    final titleCol = isDark ? Colors.white : AppColors.darkBlue;
+    final bodyCol = isDark ? Colors.white70 : AppColors.mediumBlue;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: AppColors.overlayDark.withOpacity(0.1),
+            color: (isDark ? Colors.black54 : AppColors.overlayDark).withOpacity(0.1),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
         ],
         border: Border.all(
-          color: AppColors.lightGrey.withOpacity(0.3),
+          color: borderCol,
           width: 1,
         ),
       ),
@@ -907,9 +936,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     children: [
                       Text(
                         office.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: AppColors.darkBlue,
+                          color: titleCol,
                           fontSize: 16,
                         ),
                         maxLines: 1,
@@ -919,29 +948,48 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       Text(
                         office.description,
                         style: TextStyle(
-                          color: AppColors.mediumBlue,
+                          color: bodyCol,
                           fontSize: 14,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.my_location,
-                            size: 14,
-                            color: AppColors.lightGrey,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${office.latitude.toStringAsFixed(4)}, ${office.longitude.toStringAsFixed(4)}',
-                            style: TextStyle(
-                              color: AppColors.lightGrey,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+                      FutureBuilder<geo.Position?>(
+                        future: _positionFuture,
+                        builder: (context, snap) {
+                          String text = 'Distancia desconocida';
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            text = 'Calculando distancia…';
+                          } else if (snap.data != null) {
+                            final pos = snap.data!;
+                            final meters = geo.Geolocator.distanceBetween(
+                              pos.latitude,
+                              pos.longitude,
+                              office.latitude,
+                              office.longitude,
+                            );
+                            final km = (meters / 1000.0);
+                            text = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
+                          }
+                          return Row(
+                            children: [
+                              Icon(
+                                Icons.route,
+                                size: 14,
+                                color: isDark ? Colors.white54 : AppColors.lightGrey,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                text,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white60 : AppColors.lightGrey,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -949,7 +997,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.primaryColor.withOpacity(0.1),
+                    color: AppColors.primaryColor.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
