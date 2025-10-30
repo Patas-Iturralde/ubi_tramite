@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+// SVG runtime rasterization removed; using PNG assets registration instead
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 
 import '../models/office_location.dart';
 import '../providers/location_provider.dart';
+import '../models/place_category.dart';
 import '../providers/offices_provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/mapbox_config.dart';
@@ -33,15 +35,21 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   PointAnnotationManager? _routePointManager;
   List<PolylineAnnotation> _routePolylines = const [];
   List<PointAnnotation> _routeEndpoints = const [];
+  List<PointAnnotation?> _officeAnnotations = const [];
+  List<String> _officeLabels = const [];
+  final Map<String, OfficeLocation> _annotationIdToOffice = {};
+  OnPointAnnotationClickListener? _pinClickListener;
   Uint8List? _markerImage;
   Uint8List? _startImage;
   Uint8List? _endImage;
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   bool _alternateRouteStyle = false;
+  // Imagen personalizada deshabilitada por ahora; usamos iconos del estilo
   
   // ETA dinámico para la ruta activa
   String? _routeEtaText;
   Timer? _etaTimer;
+  Timer? _zoomTimer;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -113,6 +121,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   @override
   void dispose() {
     _etaTimer?.cancel();
+    _zoomTimer?.cancel();
     super.dispose();
   }
 
@@ -163,9 +172,58 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     mapboxMap = controller;
     _enableUserLocation();
     _applyMapStyle(mode: ref.read(themeModeProvider));
-    _addOfficeMarkers();
+    _ensureCustomIcons().then((_) => _addOfficeMarkers());
     _centerOnUserLocation();
+    _updateMarkerLabelSizeForZoom();
+    _zoomTimer?.cancel();
+    _zoomTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
+      _updateMarkerLabelSizeForZoom();
+    });
   }
+
+  Future<void> _ensureCustomIcons() async {
+    if (mapboxMap == null) return;
+    await _registerPngStyleImage('edificio', 'assets/images/edificio.png', 48);
+    await _registerPngStyleImage('abogado', 'assets/images/abogado.png', 48);
+  }
+
+  Future<void> _registerPngStyleImage(String name, String assetPath, int size) async {
+    if (mapboxMap == null) return;
+    try {
+      final data = await rootBundle.load(assetPath);
+      final bytes = data.buffer.asUint8List();
+      final mbx = MbxImage(width: size, height: size, data: bytes);
+      await mapboxMap!.style.addStyleImage(
+        name,
+        1.0,
+        mbx,
+        false,
+        const [],
+        const [],
+        null,
+      );
+    } catch (_) {
+      // Fallback a icono genérico si el PNG no existe aún
+      try {
+        final data = await rootBundle.load('assets/images/marker_icon.png');
+        final bytes = data.buffer.asUint8List();
+        final mbx = MbxImage(width: size, height: size, data: bytes);
+        await mapboxMap!.style.addStyleImage(
+          name,
+          1.0,
+          mbx,
+          false,
+          const [],
+          const [],
+          null,
+        );
+      } catch (e) {
+        debugPrint('No se pudo registrar el icono $name: $e');
+      }
+    }
+  }
+
+  // Carga de imagen personalizada eliminada por compatibilidad de API
 
   /// Habilita la visualización de la ubicación del usuario en el mapa
   Future<void> _enableUserLocation() async {
@@ -192,32 +250,78 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   /// Agrega marcadores usando el sistema nativo de Anotaciones de Mapbox
   Future<void> _addMapboxMarkers() async {
-    if (mapboxMap == null || _markerImage == null) return;
+    if (mapboxMap == null) return;
 
     if (_pointAnnotationManager == null) {
       _pointAnnotationManager = await mapboxMap!.annotations.createPointAnnotationManager();
+      // Listener de clic en pines
+      _pinClickListener = _PointTapListener((annotation){
+        final office = _annotationIdToOffice[annotation.id];
+        if (office != null) {
+          _showOfficeInfoDialog(office);
+        }
+      });
+      if (_pinClickListener != null) {
+        _pointAnnotationManager!.addOnPointAnnotationClickListener(_pinClickListener!);
+      }
     } else {
       await _pointAnnotationManager!.deleteAll();
     }
 
     if (_offices.isEmpty) return;
 
+      final List<String> labels = [];
       final List<PointAnnotationOptions> optionsList = _offices.map((office) {
+        labels.add(office.name);
         return PointAnnotationOptions(
           geometry: Point(coordinates: Position(office.longitude, office.latitude)),
-          image: _markerImage,
-          iconSize: 0.3,
+          iconImage: office.category.iconName,
+          iconColor: office.category.color.value,
+          iconSize: 1.2,
           textField: office.name,
+          textAnchor: TextAnchor.TOP,
+          textOffset: [0, -1.6],
+          textHaloColor: Colors.black.withOpacity(0.6).value,
+          textHaloWidth: 1.0,
+          textColor: Colors.white.value,
           iconTextFit: IconTextFit.NONE,
           iconTextFitPadding: [0, 0, 0, 0],
         );
       }).toList();
 
       if (optionsList.isNotEmpty) {
-        await _pointAnnotationManager!.createMulti(optionsList);
+        _officeAnnotations = await _pointAnnotationManager!.createMulti(optionsList);
+        _officeLabels = labels;
+        _annotationIdToOffice.clear();
+        for (var i = 0; i < _officeAnnotations.length; i++) {
+          final ann = _officeAnnotations[i];
+          if (ann != null && i < _offices.length) {
+            _annotationIdToOffice[ann.id] = _offices[i];
+          }
+        }
       }
 
       // Los marcadores se pueden tocar desde el drawer lateral
+  }
+
+  Future<void> _updateMarkerLabelSizeForZoom() async {
+    if (mapboxMap == null || _officeAnnotations.isEmpty || _pointAnnotationManager == null) return;
+    try {
+      final cam = await mapboxMap!.getCameraState();
+      final zoom = cam.zoom;
+      // Escala simple y ocultar etiquetas con poco zoom
+      final size = (9.0 + (zoom - 13.0)).clamp(9.0, 14.0);
+      final hideLabels = zoom < 12.0;
+      final futures = <Future>[];
+      for (var i = 0; i < _officeAnnotations.length; i++) {
+        final ann = _officeAnnotations[i];
+        if (ann == null) continue;
+        ann.textSize = size;
+        ann.textField = hideLabels ? '' : (_officeLabels.length > i ? _officeLabels[i] : ann.textField);
+        futures.add(_pointAnnotationManager!.update(ann));
+      }
+      await Future.wait(futures);
+    } catch (_) {}
   }
 
   /// Muestra el diálogo con información de la oficina
@@ -383,6 +487,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           ),
           MapAnimationOptions(duration: 2000),
         );
+        // Ajustar tamaño de etiquetas tras animación
+        Future.delayed(const Duration(milliseconds: 600), _updateMarkerLabelSizeForZoom);
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo obtener tu ubicación.')),
@@ -403,6 +509,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       ),
       MapAnimationOptions(duration: 1500),
     );
+    Future.delayed(const Duration(milliseconds: 500), _updateMarkerLabelSizeForZoom);
     // El panel es draggable; no es necesario cerrarlo manualmente
   }
 
@@ -485,8 +592,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final end = await _routePointManager!.create(
         PointAnnotationOptions(
           geometry: Point(coordinates: Position(office.longitude, office.latitude)),
-          image: _endImage,
-          iconSize: 0.28,
+          iconImage: 'flag',
+          iconSize: 1.2,
         ),
       );
       _routeEndpoints = [end];
@@ -554,6 +661,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final uri = isDark ? MapboxConfig.darkStyle : MapboxConfig.defaultStyle;
     try {
       await mapboxMap!.style.setStyleURI(uri);
+      await _ensureCustomIcons();
     } catch (_) {}
   }
 
@@ -1113,5 +1221,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   ),
       ),
     );
+  }
+}
+
+class _PointTapListener extends OnPointAnnotationClickListener {
+  final void Function(PointAnnotation) onTap;
+  _PointTapListener(this.onTap);
+  @override
+  bool onPointAnnotationClick(PointAnnotation annotation) {
+    onTap(annotation);
+    return true;
   }
 }

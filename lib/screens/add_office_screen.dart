@@ -299,6 +299,8 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
                       ),
                     const SizedBox(height: 24),
 
+                    const SizedBox(height: 24),
+
                     // Botones de acción
                     Row(
                       children: [

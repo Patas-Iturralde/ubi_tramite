@@ -58,6 +58,7 @@ dependencies:
   cloud_firestore: ^6.0.3
   firebase_auth: ^6.1.1
   http: ^1.1.0
+  flutter_svg: ^2.0.10+1
 
 dev_dependencies:
   flutter_test:
@@ -89,6 +90,8 @@ flutter:
     - assets/images/marker_icon.png
     - assets/images/fondo.jpeg
     - assets/images/logo.png
+    - assets/images/abogado.png
+    - assets/images/edificio.png
 
   #   - images/a_dot_ham.jpeg
 

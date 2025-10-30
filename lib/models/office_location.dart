@@ -1,5 +1,6 @@
 // Importa el paquete para generar IDs únicos
 import 'package:uuid/uuid.dart';
+import 'place_category.dart';
 
 /// Modelo de datos para representar una ubicación de oficina gubernamental
 class OfficeLocation {
@@ -9,6 +10,7 @@ class OfficeLocation {
   final String description;
   final double latitude;
   final double longitude;
+  final PlaceCategory category;
 
   /// Constructor. Si no se provee un 'id', se genera uno automáticamente.
   OfficeLocation({
@@ -17,6 +19,7 @@ class OfficeLocation {
     required this.description,
     required this.latitude,
     required this.longitude,
+    this.category = PlaceCategory.publicInstitutions,
   }) : id = id ?? const Uuid().v4();
 
   /// Crea una copia del objeto con la posibilidad de modificar algunos campos.
@@ -26,6 +29,7 @@ class OfficeLocation {
     String? description,
     double? latitude,
     double? longitude,
+    PlaceCategory? category,
   }) {
     return OfficeLocation(
       id: id ?? this.id,
@@ -33,6 +37,7 @@ class OfficeLocation {
       description: description ?? this.description,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      category: category ?? this.category,
     );
   }
 
@@ -44,6 +49,7 @@ class OfficeLocation {
       'description': description,
       'latitude': latitude,
       'longitude': longitude,
+      'category': category.storageValue,
     };
   }
 
@@ -55,12 +61,13 @@ class OfficeLocation {
       description: json['description'] ?? '',
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+      category: PlaceCategoryX.fromStorageValue(json['category'] as String?),
     );
   }
 
   @override
   String toString() {
-    return 'OfficeLocation(id: $id, name: $name, description: $description, lat: $latitude, lng: $longitude)';
+    return 'OfficeLocation(id: $id, name: $name, description: $description, lat: $latitude, lng: $longitude, category: ${category.storageValue})';
   }
 
   /// La igualdad se basa únicamente en el 'id' único.
