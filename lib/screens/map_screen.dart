@@ -15,6 +15,7 @@ import '../theme/app_colors.dart';
 import 'add_office_screen.dart';
 import '../services/auth_service.dart';
 import '../services/directions_service.dart';
+import '../providers/theme_provider.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
 class MapScreen extends ConsumerStatefulWidget {
@@ -28,8 +29,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   MapboxMap? mapboxMap;
   PointAnnotationManager? _pointAnnotationManager;
   PolylineAnnotationManager? _polylineAnnotationManager;
+  PointAnnotationManager? _routePointManager;
   List<PolylineAnnotation> _routePolylines = const [];
+  List<PointAnnotation> _routeEndpoints = const [];
   Uint8List? _markerImage;
+  Uint8List? _startImage;
+  Uint8List? _endImage;
+  bool _alternateRouteStyle = false;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -82,6 +88,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final ByteData byteData = await rootBundle.load('assets/images/marker_icon.png');
       setState(() {
         _markerImage = byteData.buffer.asUint8List();
+        _startImage = _markerImage;
+        _endImage = _markerImage;
       });
     } catch (e) {
       debugPrint('Error al cargar la imagen del marcador: $e');
@@ -118,6 +126,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   void _onMapCreated(MapboxMap controller) {
     mapboxMap = controller;
     _enableUserLocation();
+    _applyMapStyle(mode: ref.read(themeModeProvider));
     _addOfficeMarkers();
     _centerOnUserLocation();
   }
@@ -320,19 +329,82 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         await _polylineAnnotationManager!.deleteAll();
         _routePolylines = const [];
       }
+      // Crear/limpiar route endpoints manager
+      _routePointManager ??= await mapboxMap!.annotations.createPointAnnotationManager();
+      if (_routeEndpoints.isNotEmpty) {
+        await _routePointManager!.deleteAll();
+        _routeEndpoints = const [];
+      }
 
-      final line = await _polylineAnnotationManager!.create(
+      final geometry = LineString(
+        coordinates: coords.map((p) => Position(p[1], p[0])).toList(),
+      );
+
+      // Grosor dinámico por zoom y colores por tema
+      final camera = await mapboxMap!.getCameraState();
+      final zoom = camera.zoom;
+      double base = (2.0 + (zoom - 10.0) * 0.7).clamp(3.0, 10.0);
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      // Estilo multicapa (azul/cyan vs alterno morado/magenta)
+      // Sombra
+      final shadowLine = await _polylineAnnotationManager!.create(
         PolylineAnnotationOptions(
-          lineColor: Colors.blue.value,
-          lineWidth: 5.0,
-          lineOpacity: 0.9,
-          geometry: LineString(coordinates: coords.map((p) => Position(p[1], p[0])).toList()),
+          lineColor: (isDark ? Colors.white12 : Colors.black26).value,
+          lineWidth: base + 4,
+          lineOpacity: 1.0,
+          geometry: geometry,
         ),
       );
-      _routePolylines = [line];
+      // Principal
+      final mainLine = await _polylineAnnotationManager!.create(
+        PolylineAnnotationOptions(
+          lineColor: (_alternateRouteStyle
+                  ? const Color(0xFF8E24AA)
+                  : (isDark ? const Color(0xFF90CAF9) : const Color(0xFF1E88E5)))
+              .withOpacity(0.9)
+              .value,
+          lineWidth: base + 1,
+          lineOpacity: 1.0,
+          geometry: geometry,
+        ),
+      );
+      // Highlight
+      final highlightLine = await _polylineAnnotationManager!.create(
+        PolylineAnnotationOptions(
+          lineColor: (_alternateRouteStyle
+                  ? const Color(0xFFFF4081)
+                  : (isDark ? const Color(0xFF80DEEA) : const Color(0xFF26C6DA)))
+              .withOpacity(0.95)
+              .value,
+          lineWidth: base - 1,
+          lineOpacity: 1.0,
+          geometry: geometry,
+        ),
+      );
+
+      _routePolylines = [shadowLine, mainLine, highlightLine];
+
+      // Puntos de inicio y fin
+      final start = await _routePointManager!.create(
+        PointAnnotationOptions(
+          geometry: Point(coordinates: Position(position.longitude, position.latitude)),
+          image: _startImage,
+          iconSize: 0.25,
+        ),
+      );
+      final end = await _routePointManager!.create(
+        PointAnnotationOptions(
+          geometry: Point(coordinates: Position(office.longitude, office.latitude)),
+          image: _endImage,
+          iconSize: 0.28,
+        ),
+      );
+      _routeEndpoints = [start, end];
 
       // Ajustar cámara aproximadamente al destino
       await _navigateToOffice(office);
+      if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -342,8 +414,45 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     }
   }
 
+  /// Aplica estilo del mapa considerando ThemeMode explícito o tema actual
+  Future<void> _applyMapStyle({ThemeMode? mode}) async {
+    if (mapboxMap == null) return;
+    bool isDark;
+    if (mode != null) {
+      isDark = mode == ThemeMode.dark
+          ? true
+          : mode == ThemeMode.light
+              ? false
+              : MediaQuery.of(context).platformBrightness == Brightness.dark;
+    } else {
+      isDark = Theme.of(context).brightness == Brightness.dark;
+    }
+    final uri = isDark ? MapboxConfig.darkStyle : MapboxConfig.defaultStyle;
+    try {
+      await mapboxMap!.style.setStyleURI(uri);
+    } catch (_) {}
+  }
+
+  
+
+  Future<void> _clearRoute() async {
+    try {
+      if (_polylineAnnotationManager != null) {
+        await _polylineAnnotationManager!.deleteAll();
+        _routePolylines = const [];
+      }
+      if (_routePointManager != null) {
+        await _routePointManager!.deleteAll();
+        _routeEndpoints = const [];
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
   /// Construye el Drawer lateral con la lista de oficinas
   Widget _buildDrawer() {
+    final themeMode = ref.watch(themeModeProvider);
+    final isDark = themeMode == ThemeMode.dark;
     return Drawer(
       child: Column(
         children: [
@@ -446,6 +555,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     },
                   ),
           ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+            title: const Text('Modo oscuro'),
+            trailing: Switch(
+              value: isDark,
+              onChanged: (_) => ref.read(themeModeProvider.notifier).toggle(),
+            ),
+          ),
         ],
       ),
     );
@@ -460,6 +578,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         _offices = next.offices;
       });
       await _addMapboxMarkers();
+    });
+    // Escuchar cambios de tema y aplicar estilo de mapa en caliente
+    ref.listen(themeModeProvider, (previous, next) async {
+      await _applyMapStyle(mode: next);
     });
     return Scaffold(
       key: _scaffoldKey,
@@ -495,14 +617,17 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           center: Point(coordinates: Position(_defaultLongitude, _defaultLatitude)),
                           zoom: _defaultZoom,
                         ),
-                        styleUri: MapboxConfig.defaultStyle,
+                        styleUri: Theme.of(context).brightness == Brightness.dark
+                            ? MapboxConfig.darkStyle
+                            : MapboxConfig.defaultStyle,
                         onMapCreated: _onMapCreated,
                       ),
                       Positioned(
-                        bottom: 96,
-                        right: 20,
+                        bottom: 20,
+                        left: 20,
                         child: FloatingActionButton(
                           heroTag: 'centerLocationFab',
+                          tooltip: 'Centrar en mi ubicación',
                           onPressed: _centerOnUserLocation,
                           backgroundColor: AppColors.primaryColor,
                           child: const Icon(Icons.my_location, color: AppColors.white),
@@ -514,22 +639,41 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           data: (r) => r.toString().contains('admin'),
                           orElse: () => false,
                         );
-                        if (!isAdmin) return const SizedBox.shrink();
                         return Positioned(
                           bottom: 20,
                           right: 20,
-                          child: FloatingActionButton(
-                            heroTag: 'addOfficeFab',
-                            onPressed: () async {
-                              await Navigator.of(context).push<bool>(
-                                MaterialPageRoute(builder: (context) => const AddOfficeScreen()),
-                              );
-                              if (mounted) {
-                                await _addOfficeMarkers();
-                              }
-                            },
-                            backgroundColor: AppColors.secondaryColor,
-                            child: const Icon(Icons.add, color: AppColors.white),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              // Limpiar ruta si existe
+                              if (_routePolylines.isNotEmpty || _routeEndpoints.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: FloatingActionButton(
+                                    heroTag: 'clearRouteFab',
+                                    tooltip: 'Limpiar ruta',
+                                    onPressed: _clearRoute,
+                                    backgroundColor: Colors.redAccent,
+                                    child: const Icon(Icons.clear_all, color: Colors.white),
+                                  ),
+                                ),
+                              if (isAdmin)
+                                FloatingActionButton(
+                                  heroTag: 'addOfficeFab',
+                                  tooltip: 'Agregar oficina',
+                                  onPressed: () async {
+                                    await Navigator.of(context).push<bool>(
+                                      MaterialPageRoute(builder: (context) => const AddOfficeScreen()),
+                                    );
+                                    if (mounted) {
+                                      await _addOfficeMarkers();
+                                    }
+                                  },
+                                  backgroundColor: AppColors.secondaryColor,
+                                  child: const Icon(Icons.add, color: AppColors.white),
+                                ),
+                            ],
                           ),
                         );
                       }),

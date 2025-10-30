@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/map_screen.dart';
 
 import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
@@ -24,16 +24,20 @@ Future<void> main() async {
 }
 
 /// Aplicación principal TuGuiApp
-class TuGuiApp extends StatelessWidget {
+class TuGuiApp extends ConsumerWidget {
   const TuGuiApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Cargar preferencia de tema una sola vez al arrancar
+    ref.read(themeModeProvider.notifier).loadOnce();
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'TuGuiApp',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
       home: const _RootRouter(),
     );
   }

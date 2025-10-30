@@ -6,6 +6,8 @@ class MapboxConfig {
   
   /// Estilo de mapa por defecto
   static const String defaultStyle = 'mapbox://styles/mapbox/streets-v12';
+  /// Estilo de mapa para modo oscuro
+  static const String darkStyle = 'mapbox://styles/mapbox/dark-v11';
   
   /// Coordenadas por defecto (Riobamba, Ecuador)
   static const double defaultLatitude = -1.6715;
