@@ -35,6 +35,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   Uint8List? _markerImage;
   Uint8List? _startImage;
   Uint8List? _endImage;
+  final DraggableScrollableController _sheetController = DraggableScrollableController();
   bool _alternateRouteStyle = false;
 
   bool _isLoading = true;
@@ -42,10 +43,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   List<OfficeLocation> _offices = [];
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   
-  // Animación para el panel desplegable
-  late AnimationController _panelController;
-  late Animation<double> _panelAnimation;
-  bool _isPanelExpanded = false;
+  // Animación del panel (reemplazado por DraggableScrollableSheet)
 
   // Usar configuración centralizada
   static const double _defaultLatitude = MapboxConfig.defaultLatitude;
@@ -56,19 +54,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   void initState() {
     super.initState();
     
-    // Inicializar animación del panel
-    _panelController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _panelAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _panelController,
-      curve: Curves.easeInOut,
-    ));
-    
     _loadMarkerImage().then((_) {
       _initializeMap();
     });
@@ -76,7 +61,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   @override
   void dispose() {
-    _panelController.dispose();
     super.dispose();
   }
 
@@ -186,86 +170,142 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   /// Muestra el diálogo con información de la oficina
   void _showOfficeInfoDialog(OfficeLocation office) {
-    showDialog(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF232323) : Colors.white;
+    final titleColor = isDark ? Colors.white : AppColors.darkBlue;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+
+    showGeneralDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.location_on, color: Colors.red, size: 24),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  office.name,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+      barrierColor: Colors.black54,
+      barrierDismissible: true,
+      barrierLabel: 'Detalles oficina',
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, anim1, anim2) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.9,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.6 : 0.2),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
-            ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [AppColors.primaryColor, AppColors.secondaryColor],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.location_on, color: Colors.white),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          office.name,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: titleColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    office.description,
+                    style: TextStyle(fontSize: 14, color: textColor),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : Colors.grey[100],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.my_location, size: 18, color: AppColors.primaryColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Lat ${office.latitude.toStringAsFixed(6)} • Lng ${office.longitude.toStringAsFixed(6)}',
+                            style: TextStyle(fontSize: 12, color: textColor),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.primaryColor.withOpacity(0.5)),
+                            foregroundColor: AppColors.primaryColor,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text('Cerrar'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            Navigator.of(context).pop();
+                            await _drawRouteToOffice(office);
+                            if (_sheetController.isAttached) {
+                              await _sheetController.animateTo(
+                                0.12,
+                                duration: const Duration(milliseconds: 250),
+                                curve: Curves.easeOutCubic,
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.alt_route),
+                          label: const Text('Ir'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.secondaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                office.description,
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Coordenadas:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Lat: ${office.latitude.toStringAsFixed(6)}',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                    Text(
-                      'Lng: ${office.longitude.toStringAsFixed(6)}',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cerrar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _navigateToOffice(office);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[700],
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Ir a ubicación'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _drawRouteToOffice(office);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green[700],
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Trazar ruta'),
-            ),
-          ],
+        );
+      },
+      transitionBuilder: (context, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(scale: Tween<double>(begin: 0.95, end: 1.0).animate(curved), child: child),
         );
       },
     );
@@ -303,11 +343,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       ),
       MapAnimationOptions(duration: 1500),
     );
-    
-    // Cerrar el panel después de navegar
-    if (_isPanelExpanded) {
-      _togglePanel();
-    }
+    // El panel es draggable; no es necesario cerrarlo manualmente
   }
 
   Future<void> _drawRouteToOffice(OfficeLocation office) async {
@@ -623,7 +659,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         onMapCreated: _onMapCreated,
                       ),
                       Positioned(
-                        bottom: 20,
+                        top: 30,
                         left: 20,
                         child: FloatingActionButton(
                           heroTag: 'centerLocationFab',
@@ -640,7 +676,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           orElse: () => false,
                         );
                         return Positioned(
-                          bottom: 20,
+                          top: 30,
                           right: 20,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -689,197 +725,136 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// Botón desplegable de oficinas desde abajo
   Widget _buildOfficesDropdownButton() {
     final officesState = ref.watch(officesProvider);
-    
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: AnimatedBuilder(
-        animation: _panelAnimation,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: Offset(0, (1 - _panelAnimation.value) * 350),
-            child: Container(
-              decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.overlayDark,
-                    blurRadius: 15,
-                    offset: Offset(0, -5),
-                  ),
-                ],
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sheetBg = isDark ? const Color(0xFF1E1E1E) : AppColors.white;
+    final sheetShadow = isDark ? Colors.black54 : AppColors.overlayDark;
+    final titleColor = isDark ? Colors.white : AppColors.darkBlue;
+    final subtitleColor = isDark ? Colors.white70 : AppColors.mediumBlue;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: DraggableScrollableSheet(
+        controller: _sheetController,
+        expand: false,
+        initialChildSize: 0.14,
+        minChildSize: 0.12,
+        maxChildSize: 0.65,
+        builder: (context, scrollController) {
+          return Container(
+          decoration: BoxDecoration(
+            color: sheetBg,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: sheetShadow,
+                blurRadius: 15,
+                offset: Offset(0, -5),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Handle para indicar que se puede deslizar
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.lightGrey,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+            ],
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: EdgeInsets.zero,
+            children: [
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: AppColors.lightGrey,
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                  
-                  // Botón para expandir/contraer
-                  GestureDetector(
-                    onTap: _togglePanel,
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      child: Row(
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.primaryColor, AppColors.secondaryColor],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.location_on, color: AppColors.white, size: 24),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [AppColors.primaryColor, AppColors.secondaryColor],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.location_on,
-                              color: AppColors.white,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Oficinas Cercanas',
-                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.darkBlue,
-                                  ),
+                          Text(
+                            'Oficinas Cercanas',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: titleColor,
                                 ),
-                                Text(
-                                  '${officesState.offices.length} oficinas disponibles',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: AppColors.mediumBlue,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
-                          AnimatedRotation(
-                            turns: _isPanelExpanded ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 300),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.keyboard_arrow_up,
-                                color: AppColors.primaryColor,
-                                size: 24,
-                              ),
-                            ),
+                          Text(
+                            '${officesState.offices.length} oficinas disponibles',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: subtitleColor,
+                                ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  
-                  // Panel expandible con lista de oficinas
-                  if (_isPanelExpanded) ...[
-                    Container(
-                      height: 350,
-                      child: officesState.isLoading
-                          ? const Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
-                                  ),
-                                  SizedBox(height: 16),
-                                  Text(
-                                    'Cargando oficinas...',
-                                    style: TextStyle(color: AppColors.mediumBlue),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : officesState.error != null
-                              ? Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.error_outline,
-                                        color: AppColors.primaryColor,
-                                        size: 48,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        'Error: ${officesState.error}',
-                                        style: const TextStyle(color: AppColors.mediumBlue),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : officesState.offices.isEmpty
-                                  ? const Center(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.location_off,
-                                            color: AppColors.lightGrey,
-                                            size: 48,
-                                          ),
-                                          SizedBox(height: 16),
-                                          Text(
-                                            'No hay oficinas disponibles',
-                                            style: TextStyle(color: AppColors.mediumBlue),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : ListView.builder(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                                      itemCount: officesState.offices.length,
-                                      itemBuilder: (context, index) {
-                                        final office = officesState.offices[index];
-                                        return _buildOfficeCard(office);
-                                      },
-                                    ),
-                    ),
                   ],
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 12),
+              if (officesState.isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+                    ),
+                  ),
+                )
+              else if (officesState.error != null)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: Text('Error al cargar oficinas',
+                        style: TextStyle(color: AppColors.mediumBlue)),
+                  ),
+                )
+              else if (officesState.offices.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: Text('No hay oficinas disponibles',
+                        style: TextStyle(color: AppColors.mediumBlue)),
+                  ),
+                )
+              else
+                ...officesState.offices
+                    .map((o) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: _buildOfficeCard(o),
+                        ))
+                    .toList(),
+              const SizedBox(height: 12),
+            ],
+          ),
           );
         },
       ),
     );
   }
   
-  /// Alterna el estado del panel desplegable
-  void _togglePanel() {
-    setState(() {
-      _isPanelExpanded = !_isPanelExpanded;
-      if (_isPanelExpanded) {
-        _panelController.forward();
-      } else {
-        _panelController.reverse();
-      }
-    });
-  }
+  // Panel inferior ahora es DraggableScrollableSheet
 
   /// Tarjeta de oficina moderna
   Widget _buildOfficeCard(OfficeLocation office) {
@@ -904,7 +879,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _navigateToOffice(office),
+          onTap: () => _showOfficeInfoDialog(office),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
