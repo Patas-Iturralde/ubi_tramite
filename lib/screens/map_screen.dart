@@ -14,6 +14,7 @@ import '../config/mapbox_config.dart';
 import '../theme/app_colors.dart';
 import 'add_office_screen.dart';
 import '../services/auth_service.dart';
+import '../services/directions_service.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
 class MapScreen extends ConsumerStatefulWidget {
@@ -26,6 +27,8 @@ class MapScreen extends ConsumerStatefulWidget {
 class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateMixin {
   MapboxMap? mapboxMap;
   PointAnnotationManager? _pointAnnotationManager;
+  PolylineAnnotationManager? _polylineAnnotationManager;
+  List<PolylineAnnotation> _routePolylines = const [];
   Uint8List? _markerImage;
 
   bool _isLoading = true;
@@ -61,7 +64,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     ));
     
     _loadMarkerImage().then((_) {
-      _clearCustomOffices();
       _initializeMap();
     });
   }
@@ -72,15 +74,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     super.dispose();
   }
 
-  /// Limpia las oficinas personalizadas guardadas
-  Future<void> _clearCustomOffices() async {
-    try {
-      await ref.read(officesProvider.notifier).clearCustomOffices();
-      debugPrint('Oficinas personalizadas limpiadas');
-    } catch (e) {
-      debugPrint('Error al limpiar oficinas personalizadas: $e');
-    }
-  }
+  // Eliminado: ya no se limpian oficinas al iniciar
 
   /// Carga la imagen del marcador desde los assets.
   Future<void> _loadMarkerImage() async {
@@ -143,16 +137,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   Future<void> _addOfficeMarkers() async {
     if (mapboxMap == null) return;
     try {
-      // Solo cargar oficinas si no están ya cargadas
       final officesState = ref.read(officesProvider);
-      if (officesState.offices.isEmpty && !officesState.isLoading) {
-        await ref.read(officesProvider.notifier).loadOffices();
-      }
-      
-      final updatedOfficesState = ref.read(officesProvider);
-      setState(() {
-        _offices = updatedOfficesState.offices;
-      });
+      setState(() => _offices = officesState.offices);
       await _addMapboxMarkers();
     } catch (e) {
       debugPrint('Error al cargar oficinas: $e');
@@ -259,6 +245,17 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               ),
               child: const Text('Ir a ubicación'),
             ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _drawRouteToOffice(office);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Trazar ruta'),
+            ),
           ],
         );
       },
@@ -301,6 +298,47 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     // Cerrar el panel después de navegar
     if (_isPanelExpanded) {
       _togglePanel();
+    }
+  }
+
+  Future<void> _drawRouteToOffice(OfficeLocation office) async {
+    if (mapboxMap == null) return;
+    try {
+      final position = await ref.read(locationProvider.notifier).getCurrentPosition();
+      if (position == null) return;
+
+      final coords = await DirectionsService.getRoute(
+        position.latitude,
+        position.longitude,
+        office.latitude,
+        office.longitude,
+      );
+
+      // Crear/limpiar polyline manager
+      _polylineAnnotationManager ??= await mapboxMap!.annotations.createPolylineAnnotationManager();
+      if (_routePolylines.isNotEmpty) {
+        await _polylineAnnotationManager!.deleteAll();
+        _routePolylines = const [];
+      }
+
+      final line = await _polylineAnnotationManager!.create(
+        PolylineAnnotationOptions(
+          lineColor: Colors.blue.value,
+          lineWidth: 5.0,
+          lineOpacity: 0.9,
+          geometry: LineString(coordinates: coords.map((p) => Position(p[1], p[0])).toList()),
+        ),
+      );
+      _routePolylines = [line];
+
+      // Ajustar cámara aproximadamente al destino
+      await _navigateToOffice(office);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo trazar la ruta: $e')),
+        );
+      }
     }
   }
 
@@ -415,6 +453,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    // Escuchar cambios de oficinas y actualizar marcadores cuando cambien
+    ref.listen(officesProvider, (previous, next) async {
+      if (!mounted) return;
+      setState(() {
+        _offices = next.offices;
+      });
+      await _addMapboxMarkers();
+    });
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
