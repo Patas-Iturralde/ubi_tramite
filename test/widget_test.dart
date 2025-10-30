@@ -8,7 +8,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:ubi_tramite/main.dart';
+import 'package:tugui_app/main.dart';
 
 void main() {
   testWidgets('TuGuiApp app smoke test', (WidgetTester tester) async {

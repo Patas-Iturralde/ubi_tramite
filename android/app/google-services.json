@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "897832137391",
+    "project_id": "tuguiapp-5364f",
+    "storage_bucket": "tuguiapp-5364f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:897832137391:android:71fec2565c47cc5929da5a",
+        "android_client_info": {
+          "package_name": "com.example.ubi_tramite"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8b8-a5EmSe0hmk52-JwQMc8sS4IPPb9A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

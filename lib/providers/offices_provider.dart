@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/office_location.dart';
 import '../services/local_storage_service.dart';
+import '../services/firestore_service.dart';
 
 /// Estado de las oficinas (predeterminadas + personalizadas)
 class OfficesState {
@@ -38,7 +39,13 @@ class OfficesNotifier extends StateNotifier<OfficesState> {
     try {
       state = state.copyWith(isLoading: true, error: null);
       
-      final offices = await LocalStorageService.getAllOffices();
+      // Cargar desde Firestore; si falla, usar almacenamiento local como respaldo
+      List<OfficeLocation> offices;
+      try {
+        offices = await FirestoreService.getAllOffices();
+      } catch (_) {
+        offices = await LocalStorageService.getAllOffices();
+      }
       
       state = state.copyWith(
         offices: offices,
@@ -56,7 +63,12 @@ class OfficesNotifier extends StateNotifier<OfficesState> {
   /// Agrega una nueva oficina personalizada
   Future<bool> addCustomOffice(OfficeLocation office) async {
     try {
-      final success = await LocalStorageService.saveCustomOffice(office);
+      bool success;
+      try {
+        success = await FirestoreService.saveCustomOffice(office);
+      } catch (_) {
+        success = await LocalStorageService.saveCustomOffice(office);
+      }
       
       if (success) {
         // Recargar la lista de oficinas
@@ -73,7 +85,12 @@ class OfficesNotifier extends StateNotifier<OfficesState> {
   /// Elimina una oficina personalizada
   Future<bool> deleteCustomOffice(String officeName) async {
     try {
-      final success = await LocalStorageService.deleteCustomOffice(officeName);
+      bool success;
+      try {
+        success = await FirestoreService.deleteCustomOfficeByName(officeName);
+      } catch (_) {
+        success = await LocalStorageService.deleteCustomOffice(officeName);
+      }
       
       if (success) {
         // Recargar la lista de oficinas
@@ -90,7 +107,12 @@ class OfficesNotifier extends StateNotifier<OfficesState> {
   /// Limpia todas las oficinas personalizadas
   Future<bool> clearCustomOffices() async {
     try {
-      final success = await LocalStorageService.clearCustomOffices();
+      bool success;
+      try {
+        success = await FirestoreService.clearCustomOffices();
+      } catch (_) {
+        success = await LocalStorageService.clearCustomOffices();
+      }
       
       if (success) {
         // Recargar la lista de oficinas
