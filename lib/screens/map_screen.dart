@@ -38,6 +38,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   Uint8List? _endImage;
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   bool _alternateRouteStyle = false;
+  
+  // ETA dinámico para la ruta activa
+  String? _routeEtaText;
+  Timer? _etaTimer;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -53,6 +57,42 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   
   // Ubicación actual precalculada (evitar modificar providers durante build)
   Future<geo.Position?>? _positionFuture;
+
+  Future<String> _computeDistanceEtaText(OfficeLocation office) async {
+    final pos = await _positionFuture;
+    if (pos == null) return 'Distancia desconocida';
+    try {
+      final summary = await DirectionsService.getRouteSummary(
+        pos.latitude,
+        pos.longitude,
+        office.latitude,
+        office.longitude,
+      );
+      final km = summary.distanceMeters / 1000.0;
+      final totalMinutes = (summary.durationSeconds / 60.0).round();
+      final distText = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
+      String etaText;
+      if (totalMinutes >= 60) {
+        final hours = totalMinutes ~/ 60;
+        final mins = totalMinutes % 60;
+        etaText = mins == 0 ? '${hours} h' : '${hours} h ${mins} min';
+      } else {
+        etaText = totalMinutes <= 1 ? '1 min' : '${totalMinutes} min';
+      }
+      return '$distText • $etaText';
+    } catch (_) {
+      // Fallback: calcular distancia geodésica si falla la API
+      final meters = geo.Geolocator.distanceBetween(
+        pos.latitude,
+        pos.longitude,
+        office.latitude,
+        office.longitude,
+      );
+      final km = meters / 1000.0;
+      final distText = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
+      return distText;
+    }
+  }
 
   @override
   void initState() {
@@ -72,6 +112,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   @override
   void dispose() {
+    _etaTimer?.cancel();
     super.dispose();
   }
 
@@ -259,23 +300,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         const Icon(Icons.my_location, size: 18, color: AppColors.primaryColor),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: FutureBuilder<geo.Position?>(
-                            future: _positionFuture,
+                          child: FutureBuilder<String>(
+                            future: _computeDistanceEtaText(office),
                             builder: (context, snap) {
-                              String text = 'Distancia desconocida';
-                              if (snap.connectionState == ConnectionState.waiting) {
-                                text = 'Calculando distancia…';
-                              } else if (snap.data != null) {
-                                final pos = snap.data!;
-                                final meters = geo.Geolocator.distanceBetween(
-                                  pos.latitude,
-                                  pos.longitude,
-                                  office.latitude,
-                                  office.longitude,
-                                );
-                                final km = (meters / 1000.0);
-                                text = km < 1 ? '${(km * 1000).round()} m' : '${km.toStringAsFixed(1)} km';
-                              }
+                              final text = snap.connectionState == ConnectionState.waiting
+                                  ? 'Calculando distancia…'
+                                  : (snap.data ?? 'Distancia desconocida');
                               return Text(
                                 text,
                                 style: TextStyle(fontSize: 12, color: textColor),
@@ -463,6 +493,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
       // Ajustar cámara aproximadamente al destino
       await _navigateToOffice(office);
+      // Calcular ETA inicial y programar actualizaciones periódicas
+      await _updateRouteEta(office);
+      _etaTimer?.cancel();
+      _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+        await _updateRouteEta(office);
+      });
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -470,6 +506,35 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           SnackBar(content: Text('No se pudo trazar la ruta: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _updateRouteEta(OfficeLocation office) async {
+    try {
+      final pos = await ref.read(locationProvider.notifier).getCurrentPosition();
+      if (pos == null) return;
+      final summary = await DirectionsService.getRouteSummary(
+        pos.latitude,
+        pos.longitude,
+        office.latitude,
+        office.longitude,
+      );
+      final totalMinutes = (summary.durationSeconds / 60.0).round();
+      String etaText;
+      if (totalMinutes >= 60) {
+        final hours = totalMinutes ~/ 60;
+        final mins = totalMinutes % 60;
+        etaText = mins == 0 ? '${hours} h' : '${hours} h ${mins} min';
+      } else {
+        etaText = totalMinutes <= 1 ? '1 min' : '${totalMinutes} min';
+      }
+      if (mounted) {
+        setState(() {
+          _routeEtaText = etaText;
+        });
+      }
+    } catch (_) {
+      // mantener último ETA si falla temporalmente
     }
   }
 
@@ -496,6 +561,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   Future<void> _clearRoute() async {
     try {
+      _etaTimer?.cancel();
+      _etaTimer = null;
+      _routeEtaText = null;
       if (_polylineAnnotationManager != null) {
         await _polylineAnnotationManager!.deleteAll();
         _routePolylines = const [];
@@ -692,6 +760,39 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           child: const Icon(Icons.my_location, color: AppColors.white),
                         ),
                       ),
+                      // Burbuja ETA sobre el mapa cuando hay ruta
+                      if (_routePolylines.isNotEmpty && _routeEtaText != null)
+                        Positioned(
+                          top: 12,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.access_time, size: 16, color: Colors.white),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _routeEtaText!,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       Consumer(builder: (context, ref, _) {
                         final roleAsync = ref.watch(userRoleProvider);
                         final isAdmin = roleAsync.maybeWhen(
@@ -712,7 +813,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                                   child: FloatingActionButton(
                                     heroTag: 'clearRouteFab',
                                     tooltip: 'Limpiar ruta',
-                                    onPressed: _clearRoute,
+                                      onPressed: _clearRoute,
                                     backgroundColor: Colors.redAccent,
                                     child: const Icon(Icons.clear_all, color: Colors.white),
                                   ),

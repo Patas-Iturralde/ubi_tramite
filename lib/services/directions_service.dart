@@ -30,6 +30,33 @@ class DirectionsService {
         .toList();
     return coords; // [lat, lng]
   }
+
+  /// Obtiene resumen de la ruta (distancia en metros y duración en segundos)
+  static Future<({double distanceMeters, double durationSeconds})> getRouteSummary(
+    double originLat,
+    double originLng,
+    double destLat,
+    double destLng,
+  ) async {
+    final uri = Uri.parse(
+      'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/'
+      '$originLng,$originLat;$destLng,$destLat'
+      '?alternatives=false&geometries=geojson&overview=false&steps=false&access_token=${MapboxConfig.accessToken}',
+    );
+
+    final resp = await http.get(uri);
+    if (resp.statusCode != 200) {
+      throw Exception('Error al obtener resumen de ruta (${resp.statusCode})');
+    }
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    final routes = data['routes'] as List<dynamic>?
+        ?? (throw Exception('Sin rutas disponibles'));
+    if (routes.isEmpty) throw Exception('Sin rutas disponibles');
+    final route = routes.first as Map<String, dynamic>;
+    final distance = (route['distance'] as num).toDouble();
+    final duration = (route['duration'] as num).toDouble();
+    return (distanceMeters: distance, durationSeconds: duration);
+  }
 }
 
 
