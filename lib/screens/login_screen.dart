@@ -3,9 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
-import '../providers/guest_mode_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'splash_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -137,17 +135,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       _emailCtrl.clear();
       _passwordCtrl.clear();
     });
-  }
-
-  void _continueAsGuest(BuildContext context) {
-    ref.read(guestModeProvider.notifier).enableGuestMode();
-    if (context.mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const SplashScreen(),
-        ),
-      );
-    }
   }
 
   @override
@@ -332,61 +319,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 20),
-                        // Divider
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Divider(
-                                color: AppColors.white.withOpacity(0.3),
-                                thickness: 1,
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                'O',
-                                style: TextStyle(
-                                  color: AppColors.white.withOpacity(0.7),
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Divider(
-                                color: AppColors.white.withOpacity(0.3),
-                                thickness: 1,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        // Botón Continuar como invitado
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: OutlinedButton(
-                            onPressed: _loading ? null : () => _continueAsGuest(context),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                color: AppColors.white.withOpacity(0.5),
-                                width: 2,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: const Text(
-                              'Continuar como invitado',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.white,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
                         ),
                         const SizedBox(height: 20),
                       ],

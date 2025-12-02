@@ -291,6 +291,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   Future<void> _addMapboxMarkers() async {
     if (mapboxMap == null) return;
 
+    // Cancelar el timer de actualización mientras se recrean los marcadores
+    _zoomTimer?.cancel();
+
     if (_pointAnnotationManager == null) {
       _pointAnnotationManager = await mapboxMap!.annotations.createPointAnnotationManager();
       // Listener de clic en pines
@@ -307,40 +310,66 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       await _pointAnnotationManager!.deleteAll();
     }
 
-    if (_offices.isEmpty) return;
+    if (_offices.isEmpty) {
+      _officeAnnotations = const [];
+      _officeLabels = const [];
+      // Reiniciar el timer después de limpiar
+      _zoomTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
+        _updateMarkerLabelSizeForZoom();
+      });
+      return;
+    }
 
-      final List<String> labels = [];
-      final List<PointAnnotationOptions> optionsList = _offices.map((office) {
-        labels.add(office.name);
-        return PointAnnotationOptions(
-          geometry: Point(coordinates: Position(office.longitude, office.latitude)),
-          iconImage: office.category.iconName,
-          iconColor: office.category.color.value,
-          iconSize: 1.2,
-          textField: office.name,
-          textAnchor: TextAnchor.TOP,
-          textOffset: [0, -1.6],
-          textHaloColor: Colors.black.withOpacity(0.6).value,
-          textHaloWidth: 1.0,
-          textColor: Colors.white.value,
-          iconTextFit: IconTextFit.NONE,
-          iconTextFitPadding: [0, 0, 0, 0],
-        );
-      }).toList();
+    // Obtener el zoom actual para configurar el tamaño del texto correctamente
+    double textSize = 12.0;
+    bool hideLabels = false;
+    try {
+      final cam = await mapboxMap!.getCameraState();
+      final zoom = cam.zoom;
+      textSize = (9.0 + (zoom - 13.0)).clamp(9.0, 14.0);
+      hideLabels = zoom < 12.0;
+    } catch (_) {
+      // Usar valores por defecto si no se puede obtener el zoom
+    }
 
-      if (optionsList.isNotEmpty) {
-        _officeAnnotations = await _pointAnnotationManager!.createMulti(optionsList);
-        _officeLabels = labels;
-        _annotationIdToOffice.clear();
-        for (var i = 0; i < _officeAnnotations.length; i++) {
-          final ann = _officeAnnotations[i];
-          if (ann != null && i < _offices.length) {
-            _annotationIdToOffice[ann.id] = _offices[i];
-          }
+    final List<String> labels = [];
+    final List<PointAnnotationOptions> optionsList = _offices.map((office) {
+      labels.add(office.name);
+      return PointAnnotationOptions(
+        geometry: Point(coordinates: Position(office.longitude, office.latitude)),
+        iconImage: office.category.iconName,
+        iconColor: office.category.color.value,
+        iconSize: 1.2,
+        textField: hideLabels ? '' : office.name, // Configurar el texto según el zoom actual
+        textSize: textSize, // Configurar el tamaño del texto según el zoom actual
+        textAnchor: TextAnchor.TOP,
+        textOffset: [0, -1.6],
+        textHaloColor: Colors.black.withOpacity(0.6).value,
+        textHaloWidth: 1.0,
+        textColor: Colors.white.value,
+        iconTextFit: IconTextFit.NONE,
+        iconTextFitPadding: [0, 0, 0, 0],
+      );
+    }).toList();
+
+    if (optionsList.isNotEmpty) {
+      _officeAnnotations = await _pointAnnotationManager!.createMulti(optionsList);
+      _officeLabels = labels;
+      _annotationIdToOffice.clear();
+      for (var i = 0; i < _officeAnnotations.length; i++) {
+        final ann = _officeAnnotations[i];
+        if (ann != null && i < _offices.length) {
+          _annotationIdToOffice[ann.id] = _offices[i];
         }
       }
+    }
 
-      // Los marcadores se pueden tocar desde el drawer lateral
+    // Reiniciar el timer después de crear los marcadores
+    _zoomTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
+      _updateMarkerLabelSizeForZoom();
+    });
+
+    // Los marcadores se pueden tocar desde el drawer lateral
   }
 
   Future<void> _updateMarkerLabelSizeForZoom() async {
@@ -1329,17 +1358,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_ios,
-                    color: AppColors.primaryColor,
-                    size: 16,
-                  ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Mostrar en el mapa',
+                  icon: Icon(Icons.my_location, color: isDark ? Colors.white70 : AppColors.primaryColor),
+                  onPressed: () {
+                    _navigateToOffice(office);
+                    // Cerrar el panel si está abierto
+                    _sheetController.animateTo(
+                      0.0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  },
                 ),
                 if (roleAsync.value == UserRole.admin) ...[
                   const SizedBox(width: 8),
