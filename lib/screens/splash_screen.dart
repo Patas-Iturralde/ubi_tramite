@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
-import '../config/mapbox_config.dart';
 import '../theme/app_colors.dart';
 import 'map_screen.dart';
 
@@ -55,7 +53,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   Future<void> _initializeApp() async {
     try {
-      MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+      // Inicializar Mapbox solo cuando realmente se necesite (en MapScreen)
+      // No inicializar aquí para evitar mensajes de error en otras pantallas
       
       _fadeController.forward();
       _progressController.forward();

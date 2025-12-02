@@ -7,6 +7,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 // SVG runtime rasterization removed; using PNG assets registration instead
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart' as geo;
+import 'package:tugui_app/screens/admin_users_screen.dart';
 
 import '../models/office_location.dart';
 import '../providers/location_provider.dart';
@@ -20,6 +21,7 @@ import 'add_office_screen.dart';
 import '../services/auth_service.dart';
 import '../services/directions_service.dart';
 import '../providers/theme_provider.dart';
+import 'login_screen.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
 class MapScreen extends ConsumerStatefulWidget {
@@ -43,8 +45,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   Uint8List? _markerImage;
-  Uint8List? _startImage;
-  Uint8List? _endImage;
   final DraggableScrollableController _sheetController = DraggableScrollableController();
   bool _alternateRouteStyle = false;
   // Imagen personalizada deshabilitada por ahora; usamos iconos del estilo
@@ -55,6 +55,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   Timer? _zoomTimer;
 
   bool _isLoading = true;
+  bool _isLoggingOut = false;
+  bool _isDisposed = false;
   String? _errorMessage;
   List<OfficeLocation> _offices = [];
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -109,23 +111,58 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   void initState() {
     super.initState();
     
+    // Inicializar el token de Mapbox antes de crear cualquier componente
+    MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+    
     _loadMarkerImage().then((_) {
       _initializeMap();
     });
 
     // Disparar la obtención de ubicación después del primer frame
+    // Usar múltiples niveles de delay para asegurar que se ejecute completamente fuera del ciclo de build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {
-        _positionFuture = ref.read(locationProvider.notifier).getCurrentPosition();
-      });
+      // Primero verificar si ya tenemos una posición sin modificar el provider
+      final currentState = ref.read(locationProvider);
+      if (currentState.currentPosition != null) {
+        // Si ya tenemos una posición, crear un future que la devuelva inmediatamente
+        Future.microtask(() {
+          if (mounted) {
+            setState(() {
+              _positionFuture = Future.value(currentState.currentPosition);
+            });
+          }
+        });
+      } else {
+        // Si no tenemos posición, esperar un frame adicional antes de obtenerla
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) {
+            // Esta llamada modificará el provider, pero estamos completamente fuera del build
+            final future = ref.read(locationProvider.notifier).getCurrentPosition();
+            if (mounted) {
+              setState(() {
+                _positionFuture = future;
+              });
+            }
+          }
+        });
+      }
     });
   }
 
   @override
   void dispose() {
+    _isDisposed = true;
     _etaTimer?.cancel();
+    _etaTimer = null;
     _zoomTimer?.cancel();
+    _zoomTimer = null;
     _searchController.dispose();
+    // Limpiar referencias a Mapbox
+    _pointAnnotationManager = null;
+    _polylineAnnotationManager = null;
+    _routePointManager = null;
+    _pinClickListener = null;
+    mapboxMap = null;
     super.dispose();
   }
 
@@ -137,8 +174,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final ByteData byteData = await rootBundle.load('assets/images/marker_icon.png');
       setState(() {
         _markerImage = byteData.buffer.asUint8List();
-        _startImage = _markerImage;
-        _endImage = _markerImage;
       });
     } catch (e) {
       debugPrint('Error al cargar la imagen del marcador: $e');
@@ -309,7 +344,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
 
   Future<void> _updateMarkerLabelSizeForZoom() async {
-    if (mapboxMap == null || _officeAnnotations.isEmpty || _pointAnnotationManager == null) return;
+    if (_isDisposed || mapboxMap == null || _officeAnnotations.isEmpty || _pointAnnotationManager == null) return;
     try {
       final cam = await mapboxMap!.getCameraState();
       final zoom = cam.zoom;
@@ -318,14 +353,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       final hideLabels = zoom < 12.0;
       final futures = <Future>[];
       for (var i = 0; i < _officeAnnotations.length; i++) {
+        if (_isDisposed) return; // Verificar nuevamente antes de cada operación
         final ann = _officeAnnotations[i];
         if (ann == null) continue;
         ann.textSize = size;
         ann.textField = hideLabels ? '' : (_officeLabels.length > i ? _officeLabels[i] : ann.textField);
         futures.add(_pointAnnotationManager!.update(ann));
       }
-      await Future.wait(futures);
-    } catch (_) {}
+      if (!_isDisposed) {
+        await Future.wait(futures);
+      }
+    } catch (_) {
+      // Ignorar errores si el widget fue destruido
+    }
   }
 
   /// Muestra el diálogo con información de la oficina
@@ -651,7 +691,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   /// Aplica estilo del mapa considerando ThemeMode explícito o tema actual
   Future<void> _applyMapStyle({ThemeMode? mode}) async {
-    if (mapboxMap == null) return;
+    if (mapboxMap == null || _isDisposed || !mounted) return;
     bool isDark;
     if (mode != null) {
       isDark = mode == ThemeMode.dark
@@ -688,10 +728,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     } catch (_) {}
   }
 
-  /// Construye el Drawer lateral con la lista de oficinas
+  /// Construye el Drawer lateral con el menú de la app
   Widget _buildDrawer() {
     final themeMode = ref.watch(themeModeProvider);
     final isDark = themeMode == ThemeMode.dark;
+    final roleAsync = ref.watch(userRoleProvider);
     return Drawer(
       child: Column(
         children: [
@@ -711,14 +752,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.location_on,
-                    color: AppColors.white,
-                    size: 40,
-                  ),
+                  Icon(Icons.menu, color: AppColors.white, size: 40),
                   SizedBox(height: 8),
                   Text(
-                'Oficinas - TuGuiApp',
+                    'Menú - TuGuiApp',
                     style: TextStyle(
                       color: AppColors.white,
                       fontSize: 20,
@@ -729,71 +766,44 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               ),
             ),
           ),
-          Expanded(
-            child: _offices.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No hay oficinas disponibles.',
-                      style: TextStyle(
-                        color: AppColors.lightBlue,
-                        fontSize: 16,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: _offices.length,
-                    itemBuilder: (context, index) {
-                      final office = _offices[index];
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.overlayDark,
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: ListTile(
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryColor.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.location_on,
-                              color: AppColors.primaryColor,
-                            ),
-                          ),
-                          title: Text(
-                            office.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.darkBlue,
-                            ),
-                          ),
-                          subtitle: Text(
-                            office.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppColors.darkBlue.withOpacity(0.8),
-                            ),
-                          ),
-                        onTap: () {
-                          Navigator.of(context).pop(); // Cerrar drawer
-                          _showOfficeInfoDialog(office);
-                        },
-                        ),
-                      );
-                    },
-                  ),
+          ListTile(
+            leading: const Icon(Icons.map),
+            title: const Text('Mapa'),
+            onTap: () => Navigator.of(context).pop(),
           ),
+          ListTile(
+            leading: const Icon(Icons.chat_bubble_outline),
+            title: const Text('Chat (Premium)'),
+            onTap: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Funcionalidad Premium - próximamente')),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.smart_toy_outlined),
+            title: const Text('Asistente IA (Premium)'),
+            onTap: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Funcionalidad Premium - próximamente')),
+              );
+            },
+          ),
+          if (roleAsync.value == UserRole.admin) ...[
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings),
+              title: const Text('Administrar usuarios'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+                );
+              },
+            ),
+          ],
           const Divider(height: 1),
           ListTile(
             leading: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
@@ -812,7 +822,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   Widget build(BuildContext context) {
     // Escuchar cambios de oficinas y actualizar marcadores cuando cambien
     ref.listen(officesProvider, (previous, next) async {
-      if (!mounted) return;
+      if (!mounted || _isDisposed || mapboxMap == null) return;
       setState(() {
         _offices = next.offices;
       });
@@ -820,6 +830,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     });
     // Escuchar cambios de tema y aplicar estilo de mapa en caliente
     ref.listen(themeModeProvider, (previous, next) async {
+      if (!mounted || _isDisposed || mapboxMap == null) return;
       await _applyMapStyle(mode: next);
     });
     return Scaffold(
@@ -831,15 +842,74 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         elevation: 0,
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await AuthService.signOut();
-              } catch (_) {}
+          // Mostrar login o logout según el estado de autenticación
+          Consumer(
+            builder: (context, ref, _) {
+              final authState = ref.watch(authStateChangesProvider);
+              return authState.when(
+                data: (user) {
+                  if (user == null) {
+                    // Si no hay usuario, mostrar botón de login
+                    return IconButton(
+                      icon: const Icon(Icons.login),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const LoginScreen(),
+                          ),
+                        );
+                      },
+                      tooltip: 'Iniciar sesión',
+                    );
+                  } else {
+                    // Si hay usuario, mostrar botón de logout
+                    return IconButton(
+                      icon: const Icon(Icons.logout),
+                      onPressed: _isLoggingOut
+                          ? null
+                          : () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Cerrar sesión'),
+                                  content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(true),
+                                      child: const Text('Cerrar sesión', style: TextStyle(color: Colors.red)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true && mounted) {
+                                setState(() => _isLoggingOut = true);
+                                try {
+                                  await AuthService.signOut();
+                                  // El logout reiniciará la app automáticamente
+                                  // gracias al listener en TuGuiApp
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Error al cerrar sesión: $e')),
+                                    );
+                                    setState(() => _isLoggingOut = false);
+                                  }
+                                }
+                              }
+                            },
+                      tooltip: 'Cerrar sesión',
+                    );
+                  }
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              );
             },
-            tooltip: 'Cerrar sesión',
-          )
+          ),
         ],
       ),
       drawer: _buildDrawer(),
