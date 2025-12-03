@@ -21,6 +21,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   bool _isLogin = true;
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _acceptedTerms = false;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
@@ -48,6 +49,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_isLogin && !_acceptedTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debes aceptar los términos y condiciones para continuar'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     setState(() => _loading = true);
     try {
       if (_isLogin) {
@@ -134,7 +147,79 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       _nameCtrl.clear();
       _emailCtrl.clear();
       _passwordCtrl.clear();
+      _acceptedTerms = false;
     });
+  }
+
+  void _showTermsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Términos y Condiciones de uso de TuGuiApp',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTermsSection('1. ACEPTACIÓN DE LOS TÉRMINOS',
+                  'Al acceder o utilizar la aplicación móvil TuGuiApp, usted (el "Usuario") acepta estar legalmente obligado por los presentes Términos y Condiciones ("Términos"). Si no está de acuerdo con estos Términos, no debe usar la Aplicación.'),
+              _buildTermsSection('2. OBJETO DE LA APLICACIÓN',
+                  'TuGuiApp es una plataforma que ofrece información de carácter general y orientativo sobre trámites legales y administrativos, esta información se limita a proporcionar:\n\n• Requisitos específicos necesarios para la realización de un trámite.\n• Horarios de atención de la entidad pública o privada competente.\n• Costos o tarifas asociados al procedimiento.'),
+              _buildTermsSection('3. REGISTRO Y ACCESO',
+                  'Para utilizar los servicios de la Aplicación, el Usuario debe registrarse y proporcionar información veraz, completa y actualizada. El Usuario es responsable de la confidencialidad de sus credenciales de acceso y del uso de su cuenta. Los Administradores se reservan el derecho de suspender o eliminar cuentas que incumplan los presentes Términos, proporcionen información falsa o utilicen la plataforma con fines indebidos.'),
+              _buildTermsSection('4. TARIFAS Y PAGOS',
+                  'Algunos servicios y contenidos ofrecidos por la aplicación pueden estar sujetos al pago de tarifas. Estas tarifas serán informadas previamente al Usuario de manera clara.\n\nLas tarifas pagadas no son reembolsables, salvo que expresamente se indique lo contrario en casos específicos de cancelación del servicio por parte de la Administradora.'),
+              _buildTermsSection('5. RESPONSABILIDADES DEL USUARIO',
+                  'El Usuario se compromete a:\n\n• Proporcionar información precisa, veraz y actualizada en el registro y durante el uso de la Aplicación.\n• Utilizar la Aplicación únicamente para fines lícitos y de conformidad con estos Términos.\n• No utilizar la plataforma para cargar, publicar o transmitir contenido ilegal, difamatorio, obsceno o que viole los derechos de terceros.\n• Mantener la confidencialidad de sus credenciales y notificar inmediatamente a los Administradores cualquier uso no autorizado de su cuenta.'),
+              _buildTermsSection('6. PROPIEDAD INTELECTUAL',
+                  'Todos los contenidos, diseños, gráficos, logos y el software de TuGuiApp son propiedad exclusiva de los Administradores de la Aplicación. Se prohíbe el uso, copia, reproducción, modificación o distribución no autorizada de dicho contenido.'),
+              _buildTermsSection('7. PROTECCIÓN DE DATOS PERSONALES',
+                  'TuGuiApp recolecta y trata datos personales conforme a lo establecido en la Ley Orgánica de Protección de Datos Personales de Ecuador.\n\nFinalidades del tratamiento:\n• Gestión de usuarios registrados.\n• Envío de información relevante (notificaciones, actualizaciones, oportunidades).\n• Estadísticas y mejoras del servicio.\n\nDerechos del titular de los datos:\n• El usuario podrá ejercer sus derechos de acceso, rectificación y eliminación de sus datos ante los Administradores de la Aplicación.\n• Los datos no serán compartidos con terceros sin conocimiento expreso, salvo obligación legal.'),
+              _buildTermsSection('8. MODIFICACIONES DE LOS TÉRMINOS',
+                  'Nos reservamos el derecho de modificar estos términos en cualquier momento. Se le notificará sobre cualquier cambio importante a través de la aplicación o por otros medios. El uso continuado de la Aplicación después de dichas modificaciones constituye su aceptación de los nuevos términos.'),
+              _buildTermsSection('9. SOLUCIÓN DE CONTROVERSIAS',
+                  'En caso de controversias relacionadas con el uso de la Aplicación, las partes acuerdan:\n\n• Buscar una solución amistosa mediante mediación administrada por un centro debidamente acreditado.\n• Si la mediación no resulta exitosa en un plazo de 30 días, la controversia se resolverá mediante arbitraje en derecho, conforme a la Ley de Arbitraje y Mediación del Ecuador.\n• El tribunal arbitral estará compuesto por tres árbitros: uno designado por la parte demandante, otro por la parte demandada, y el tercero elegido por sorteo entre árbitros inscritos en el centro de arbitraje seleccionado.\n• El laudo arbitral será definitivo, obligatorio e inapelable.'),
+              _buildTermsSection('10. LEY APLICABLE Y JURISDICCIÓN',
+                  'Estos Términos se rigen por las leyes de la República del Ecuador. En todo lo no previsto, se aplicarán las disposiciones del Código Civil, Código de Comercio, Ley de Protección de Datos Personales, Ley de Arbitraje y Mediación, y demás normas aplicables.'),
+              _buildTermsSection('11. CONTACTO',
+                  'Para consultas, sugerencias o ejercicio de derechos en materia de protección de datos, puede contactarse a:\n\nTuGuiApp: 💌 tuguiapp1@gmail.com'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTermsSection(String title, String content) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            content,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -254,13 +339,85 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               ? 'Mínimo 6 caracteres'
                               : null,
                         ),
+                        // Checkbox de términos y condiciones (solo en registro)
+                        if (!_isLogin) ...[
+                          const SizedBox(height: 20),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Checkbox(
+                                value: _acceptedTerms,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _acceptedTerms = value ?? false;
+                                  });
+                                },
+                                activeColor: AppColors.white,
+                                checkColor: AppColors.darkBlue,
+                                side: BorderSide(
+                                  color: AppColors.white.withOpacity(0.7),
+                                  width: 2,
+                                ),
+                              ),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _acceptedTerms = !_acceptedTerms;
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: RichText(
+                                      text: TextSpan(
+                                        style: TextStyle(
+                                          color: AppColors.white.withOpacity(0.9),
+                                          fontSize: 13,
+                                        ),
+                                        children: [
+                                          const TextSpan(text: 'Acepto los '),
+                                          TextSpan(
+                                            text: 'términos y condiciones',
+                                            style: TextStyle(
+                                              color: AppColors.white,
+                                              fontWeight: FontWeight.bold,
+                                              decoration: TextDecoration.underline,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _showTermsDialog,
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: Text(
+                                  'Ver términos',
+                                  style: TextStyle(
+                                    color: AppColors.white,
+                                    fontSize: 12,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 32),
                         // Botón principal
                         SizedBox(
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: _loading ? null : _submit,
+                            onPressed: (_loading || (!_isLogin && !_acceptedTerms))
+                                ? null
+                                : _submit,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.white,
                               foregroundColor: AppColors.darkBlue,
