@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/ai_assistant_service.dart';
 import '../providers/offices_provider.dart';
+import '../providers/location_provider.dart';
 import '../theme/app_colors.dart';
 import '../providers/theme_provider.dart';
 
@@ -58,9 +59,17 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
     final officesState = ref.read(officesProvider);
     final offices = officesState.offices;
 
+    // Obtener ubicación actual del usuario (si está disponible)
+    final locationState = ref.read(locationProvider);
+    final userLocation = locationState.currentPosition;
+
     try {
-      // Obtener respuesta del asistente AI
-      final response = await _aiService.findOfficesForTransaction(message, offices);
+      // Obtener respuesta del asistente AI con ubicación del usuario
+      final response = await _aiService.findOfficesForTransaction(
+        message,
+        offices,
+        userLocation: userLocation,
+      );
 
       setState(() {
         _messages.add(ChatMessage(

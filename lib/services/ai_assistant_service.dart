@@ -1,4 +1,5 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import '../models/office_location.dart';
 
 class AiAssistantService {
@@ -26,11 +27,53 @@ class AiAssistantService {
   }
 
   /// Busca oficinas relacionadas con el trámite mencionado por el usuario
-  Future<String> findOfficesForTransaction(String userMessage, List<OfficeLocation> offices) async {
+  Future<String> findOfficesForTransaction(
+    String userMessage,
+    List<OfficeLocation> offices, {
+    geo.Position? userLocation,
+  }) async {
     try {
-      // Crear lista de oficinas disponibles para el prompt
-      final officesList = offices.map((office) {
-        return '• ${office.name} - ${office.description}${office.schedule != null ? " (Horario: ${office.schedule})" : ""}';
+      // Calcular distancias si hay ubicación del usuario
+      final officesWithDistance = <Map<String, dynamic>>[];
+      for (final office in offices) {
+        double? distanceInKm;
+        if (userLocation != null) {
+          final distanceInMeters = geo.Geolocator.distanceBetween(
+            userLocation.latitude,
+            userLocation.longitude,
+            office.latitude,
+            office.longitude,
+          );
+          distanceInKm = distanceInMeters / 1000.0;
+        }
+        officesWithDistance.add({
+          'office': office,
+          'distance': distanceInKm,
+        });
+      }
+
+      // Ordenar por distancia si hay ubicación
+      if (userLocation != null) {
+        officesWithDistance.sort((a, b) {
+          final distA = a['distance'] as double? ?? double.infinity;
+          final distB = b['distance'] as double? ?? double.infinity;
+          return distA.compareTo(distB);
+        });
+      }
+
+      // Crear lista de oficinas disponibles para el prompt con distancias
+      final officesList = officesWithDistance.map((item) {
+        final office = item['office'] as OfficeLocation;
+        final distance = item['distance'] as double?;
+        String distanceText = '';
+        if (distance != null) {
+          if (distance < 1) {
+            distanceText = ' (${(distance * 1000).toStringAsFixed(0)} m de distancia)';
+          } else {
+            distanceText = ' (${distance.toStringAsFixed(1)} km de distancia)';
+          }
+        }
+        return '• ${office.name} - ${office.description}${office.schedule != null ? " (Horario: ${office.schedule})" : ""}$distanceText';
       }).join('\n');
 
       final prompt = '''
@@ -67,7 +110,7 @@ INSTRUCCIONES CRÍTICAS - LEE CON ATENCIÓN:
 FORMATO DE RESPUESTA:
 
 🏛️ **Oficinas Recomendadas:**
-[IMPORTANTE: Lista TODAS las oficinas encontradas, no solo una. Si hay múltiples opciones (ej: municipio y GAD), menciónalas todas. Para cada oficina, incluye su nombre completo y explica brevemente por qué es relevante según su descripción]
+[IMPORTANTE: Lista TODAS las oficinas encontradas, no solo una. Si hay múltiples opciones (ej: municipio y GAD), menciónalas todas. Para cada oficina, incluye su nombre completo, la distancia si está disponible, y explica brevemente por qué es relevante según su descripción. Si hay distancias disponibles, prioriza mencionar las más cercanas primero]
 
 📋 **Información del Trámite:**
 [Explica brevemente qué se necesita para este trámite, basándote en las descripciones de las oficinas encontradas]
@@ -95,11 +138,13 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
       if (response.text != null && response.text!.isNotEmpty) {
         return response.text!;
       } else {
-        return _getFallbackResponse(userMessage, offices);
+        final officesList = officesWithDistance.map((item) => item['office'] as OfficeLocation).toList();
+        return _getFallbackResponse(userMessage, officesList, userLocation: userLocation);
       }
     } catch (e) {
       print('Error al buscar oficinas: $e');
-      return _getFallbackResponse(userMessage, offices);
+      // En caso de error, usar la lista original de oficinas sin distancias
+      return _getFallbackResponse(userMessage, offices, userLocation: userLocation);
     }
   }
 
@@ -212,14 +257,70 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
   }
 
   /// Respuesta de fallback cuando no se puede conectar con la API
-  String _getFallbackResponse(String userMessage, List<OfficeLocation> offices) {
+  String _getFallbackResponse(
+    String userMessage,
+    List<OfficeLocation> offices, {
+    geo.Position? userLocation,
+  }) {
     final matchingOffices = searchOfficesByKeywords(userMessage, offices);
     
+    if (matchingOffices.isEmpty) {
+      return '''
+🤖 **Asistente de Trámites**
+
+No encontré oficinas específicas registradas para tu consulta: "$userMessage"
+
+💡 **Sugerencias:**
+• Verifica que el trámite esté relacionado con oficinas gubernamentales
+• Intenta usar términos más específicos (ej: "trámite de vehículo", "licencia de conducir", "información territorial")
+• Revisa la lista completa de oficinas en el mapa
+
+Si necesitas ayuda con un trámite específico, describe mejor qué necesitas hacer.
+''';
+    }
+
+    // Calcular distancias si hay ubicación
+    final officesWithDistance = matchingOffices.map((office) {
+      double? distanceInKm;
+      if (userLocation != null) {
+        final distanceInMeters = geo.Geolocator.distanceBetween(
+          userLocation.latitude,
+          userLocation.longitude,
+          office.latitude,
+          office.longitude,
+        );
+        distanceInKm = distanceInMeters / 1000.0;
+      }
+      return {
+        'office': office,
+        'distance': distanceInKm,
+      };
+    }).toList();
+
+    // Ordenar por distancia si hay ubicación
+    if (userLocation != null) {
+      officesWithDistance.sort((a, b) {
+        final distA = a['distance'] as double? ?? double.infinity;
+        final distB = b['distance'] as double? ?? double.infinity;
+        return distA.compareTo(distB);
+      });
+    }
+    
     if (matchingOffices.isNotEmpty) {
-      // Crear lista detallada de todas las oficinas encontradas
-      final officesList = matchingOffices.map((o) {
+      // Crear lista detallada de todas las oficinas encontradas con distancias
+      final officesList = officesWithDistance.map((item) {
+        final o = item['office'] as OfficeLocation;
+        final distance = item['distance'] as double?;
         final desc = o.description.isNotEmpty ? o.description.split('\n').first : '';
-        return '• **${o.name}**${desc.isNotEmpty ? ' - $desc' : ''}';
+        String distanceText = '';
+        if (distance != null) {
+          if (distance < 1) {
+            distanceText = ' (${(distance * 1000).toStringAsFixed(0)} m de distancia)';
+          } else {
+            distanceText = ' (${distance.toStringAsFixed(1)} km de distancia)';
+          }
+        }
+        return '• **${o.name}**${desc.isNotEmpty ? ' - $desc' : ''}$distanceText';
       }).join('\n\n');
       
       // Determinar tipo de trámite para dar información más específica
