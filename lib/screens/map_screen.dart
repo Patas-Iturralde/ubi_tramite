@@ -8,6 +8,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:tugui_app/screens/admin_users_screen.dart';
+import 'package:tugui_app/screens/chat_screen.dart';
 
 import '../models/office_location.dart';
 import '../providers/location_provider.dart';
@@ -802,11 +803,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           ),
           ListTile(
             leading: const Icon(Icons.chat_bubble_outline),
-            title: const Text('Chat (Premium)'),
+            title: const Text('Chat en Vivo'),
             onTap: () {
               Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Funcionalidad Premium - próximamente')),
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChatScreen()),
               );
             },
           ),
