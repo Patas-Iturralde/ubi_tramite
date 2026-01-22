@@ -52,6 +52,14 @@ class AuthService {
     return parseUserRole(doc.data()?['role'] as String?);
   }
 
+  /// Obtiene un stream del rol del usuario que se actualiza en tiempo real
+  static Stream<UserRole> getUserRoleStream(String uid) {
+    return _db.collection('users').doc(uid).snapshots().map((doc) {
+      if (!doc.exists) return UserRole.standard;
+      return parseUserRole(doc.data()?['role'] as String?);
+    });
+  }
+
   static Stream<List<AppUser>> usersStream() {
     return _db.collection('users').orderBy('createdAt', descending: true).snapshots().map(
       (snap) => snap.docs.map((d) => AppUser.fromMap(d.data())).toList(),
@@ -59,7 +67,40 @@ class AuthService {
   }
 
   static Future<void> updateUserRole({required String uid, required UserRole role}) async {
-    await _db.collection('users').doc(uid).update({'role': roleToString(role)});
+    try {
+      final docRef = _db.collection('users').doc(uid);
+      final doc = await docRef.get();
+      
+      if (!doc.exists) {
+        throw Exception('El documento del usuario no existe');
+      }
+      
+      // Actualizar el rol
+      await docRef.update({
+        'role': roleToString(role),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Esperar un poco para que Firestore procese la actualización
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Verificar que se actualizó correctamente (con reintentos)
+      UserRole? updatedRole;
+      for (int i = 0; i < 3; i++) {
+        final updatedDoc = await docRef.get();
+        updatedRole = parseUserRole(updatedDoc.data()?['role'] as String?);
+        if (updatedRole == role) {
+          return; // Éxito
+        }
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+      
+      // Si después de los reintentos aún no coincide, lanzar error
+      throw Exception('El rol no se actualizó correctamente. Esperado: ${roleToString(role)}, Obtenido: ${roleToString(updatedRole ?? UserRole.standard)}');
+    } catch (e) {
+      print('Error al actualizar rol del usuario: $e');
+      rethrow;
+    }
   }
 
   static Future<void> deleteUserDoc({required String uid}) async {
@@ -67,7 +108,31 @@ class AuthService {
   }
 
   static Future<void> updateDisplayName({required String uid, required String displayName}) async {
-    await _db.collection('users').doc(uid).update({'displayName': displayName});
+    try {
+      final docRef = _db.collection('users').doc(uid);
+      final doc = await docRef.get();
+      
+      if (!doc.exists) {
+        throw Exception('El documento del usuario no existe');
+      }
+      
+      // Actualizar el nombre
+      await docRef.update({
+        'displayName': displayName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Verificar que se actualizó correctamente
+      final updatedDoc = await docRef.get();
+      final updatedName = updatedDoc.data()?['displayName'] as String?;
+      
+      if (updatedName != displayName) {
+        throw Exception('El nombre no se actualizó correctamente en la base de datos');
+      }
+    } catch (e) {
+      print('Error al actualizar nombre del usuario: $e');
+      rethrow;
+    }
   }
 }
 

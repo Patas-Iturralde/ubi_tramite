@@ -8,10 +8,12 @@ final authStateChangesProvider = StreamProvider<User?>((ref) {
   return AuthService.authStateChanges();
 });
 
-final userRoleProvider = FutureProvider<UserRole>((ref) async {
+final userRoleProvider = StreamProvider<UserRole>((ref) {
   final user = ref.watch(authStateChangesProvider).value;
-  if (user == null) return UserRole.standard;
-  return AuthService.getUserRole(user.uid);
+  if (user == null) {
+    return Stream.value(UserRole.standard);
+  }
+  return AuthService.getUserRoleStream(user.uid);
 });
 
 

@@ -1017,19 +1017,30 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               );
             },
           ),
-          if (roleAsync.value == UserRole.admin) ...[
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.admin_panel_settings),
-              title: const Text('Administrar usuarios'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+          roleAsync.when(
+            data: (role) {
+              if (role == UserRole.admin) {
+                return Column(
+                  children: [
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.admin_panel_settings),
+                      title: const Text('Administrar usuarios'),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+                        );
+                      },
+                    ),
+                  ],
                 );
-              },
-            ),
-          ],
+              }
+              return const SizedBox.shrink();
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
           const Divider(height: 1),
           ListTile(
             leading: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
@@ -1569,14 +1580,26 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     );
                   },
                 ),
-                if (roleAsync.value == UserRole.admin) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Editar',
-                    icon: Icon(Icons.edit, color: isDark ? Colors.white70 : AppColors.darkBlue),
-                    onPressed: () => _showEditOfficeSheet(office),
-                  ),
-                ],
+                roleAsync.when(
+                  data: (role) {
+                    if (role == UserRole.admin) {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Editar',
+                            icon: Icon(Icons.edit, color: isDark ? Colors.white70 : AppColors.darkBlue),
+                            onPressed: () => _showEditOfficeSheet(office),
+                          ),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
               ],
             ),
           ),
