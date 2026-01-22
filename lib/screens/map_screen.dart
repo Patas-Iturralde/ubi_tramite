@@ -27,7 +27,9 @@ import 'login_screen.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
 class MapScreen extends ConsumerStatefulWidget {
-  const MapScreen({super.key});
+  final OfficeLocation? officeToRoute;
+  
+  const MapScreen({super.key, this.officeToRoute});
 
   @override
   ConsumerState<MapScreen> createState() => _MapScreenState();
@@ -220,6 +222,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     _zoomTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
       _updateMarkerLabelSizeForZoom();
     });
+    
+    // Si hay una oficina para mostrar ruta, dibujarla después de que el mapa esté listo
+    if (widget.officeToRoute != null) {
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted && mapboxMap != null) {
+          _drawRouteToOffice(widget.officeToRoute!);
+        }
+      });
+    }
   }
 
   Future<void> _ensureCustomIcons() async {

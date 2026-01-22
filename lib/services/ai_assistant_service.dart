@@ -2,6 +2,17 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../models/office_location.dart';
 
+/// Resultado de la búsqueda de oficinas
+class OfficeSearchResult {
+  final String response;
+  final List<OfficeLocation> foundOffices;
+
+  OfficeSearchResult({
+    required this.response,
+    required this.foundOffices,
+  });
+}
+
 class AiAssistantService {
   static const String _apiKey = 'AIzaSyCqOoy37xN3R_VCHOpwn2lmesPbR2oXwyE';
   
@@ -27,7 +38,7 @@ class AiAssistantService {
   }
 
   /// Busca oficinas relacionadas con el trámite mencionado por el usuario
-  Future<String> findOfficesForTransaction(
+  Future<OfficeSearchResult> findOfficesForTransaction(
     String userMessage,
     List<OfficeLocation> offices, {
     geo.Position? userLocation,
@@ -85,27 +96,62 @@ El usuario quiere realizar el siguiente trámite o consulta:
 OFICINAS DISPONIBLES EN EL SISTEMA:
 $officesList
 
-INSTRUCCIONES CRÍTICAS - LEE CON ATENCIÓN:
-1. **DEBES BUSCAR Y LISTAR TODAS LAS OFICINAS RELACIONADAS**, no solo una. Si hay múltiples opciones, menciónalas todas.
-2. ANALIZA PROFUNDAMENTE las descripciones de CADA oficina en la lista, no solo el nombre
-3. Busca términos relacionados y sinónimos en las descripciones:
-   - "territorio", "territorial", "propiedad", "catastro", "lote", "casa", "terreno", "predio" → Busca TODAS las oficinas con "gestión territorial", "catastro", "municipio", "gobierno provincial", "GAD" en su descripción
-   - "vehículo", "carro", "auto", "matrícula" → Busca "ANT", "tránsito", "automotor"
-   - "cédula", "identidad" → Busca "registro civil"
-   - "trabajo", "laboral", "despido" → Busca "ministerio trabajo", "relaciones laborales"
-   - "impuesto", "tributario" → Busca "SRI", "rentas internas"
-4. **ESPECIALMENTE IMPORTANTE**: Si el usuario pregunta sobre "territorio", "propiedad", "casa", "terreno", "lote", "información territorial", DEBES buscar y listar TODAS las oficinas que mencionen:
-   - "gestión territorial" (incluye municipios y GADs)
-   - "municipio" (los municipios manejan catastro y territorio)
-   - "gobierno provincial" o "GAD" (manejan gestión territorial)
+INSTRUCCIONES CRÍTICAS - LEE CON ATENCIÓN Y ANALIZA CADA OFICINA:
+
+**PASO 1: IDENTIFICAR EL TIPO DE TRÁMITE**
+Analiza la consulta del usuario y determina el tipo de trámite:
+- Trámites de VEHÍCULOS (auto, carro, moto, matrícula, licencia de conducir) → ANT (Agencia Nacional de Tránsito)
+- Trámites de TERRITORIO/PROPIEDAD (casa, terreno, lote, catastro) → Municipios o GADs
+- Trámites de IMPUESTOS → SRI (Servicio de Rentas Internas)
+- Trámites de TRABAJO → Ministerio de Trabajo
+- Trámites de IDENTIDAD → Registro Civil
+
+**PASO 2: ANALIZAR CADA OFICINA EN LA LISTA**
+Para CADA oficina en la lista, lee COMPLETAMENTE su nombre Y descripción:
+- NO te bases solo en el nombre, LEE la descripción completa
+- Busca palabras clave específicas en la descripción que coincidan con el tipo de trámite
+- PRIORIZA oficinas con coincidencias EXACTAS sobre coincidencias parciales
+
+**PASO 3: COINCIDENCIAS ESPECÍFICAS POR TIPO DE TRÁMITE**
+
+Para TRÁMITES DE VEHÍCULOS (auto, carro, moto, matrícula, licencia):
+✅ BUSCA PRIMERO: Oficinas que en su nombre O descripción mencionen:
+   - "ANT" o "Agencia Nacional de Tránsito"
+   - "Tránsito" (específicamente relacionado con vehículos)
+   - "Automotor" o "automotriz"
+   ❌ NO incluyas: GAD, municipio, gobierno provincial (estos NO manejan trámites de vehículos)
+
+Para TRÁMITES DE TERRITORIO/PROPIEDAD (casa, terreno, lote, catastro):
+✅ BUSCA: Oficinas que mencionen:
+   - "gestión territorial"
    - "catastro"
-   - Cualquier referencia a territorio, predios, o gestión territorial
-5. **NO TE LIMITES A UNA SOLA OFICINA**. Si encuentras un municipio Y un GAD relacionados, menciónalos AMBOS.
-6. Identifica TODAS las oficinas de la lista que estén relacionadas con ese trámite, incluso si la relación es indirecta
-7. Si encuentras múltiples oficinas relacionadas, menciónalas TODAS específicamente por su nombre completo
-8. Proporciona información útil sobre el trámite basándote en las descripciones de las oficinas encontradas
-9. Si no encuentras una oficina exacta, sugiere TODAS las más cercanas o relacionadas según las descripciones
-10. Sé específico y práctico, usa la información de las descripciones
+   - "municipio" (para catastro municipal)
+   - "GAD" o "Gobierno Provincial" (para gestión territorial provincial)
+
+Para TRÁMITES DE IMPUESTOS:
+✅ BUSCA: Oficinas que mencionen:
+   - "SRI" o "Servicio de Rentas Internas"
+   - "Rentas Internas"
+   - "Tributario" o "fiscal"
+
+Para TRÁMITES DE TRABAJO:
+✅ BUSCA: Oficinas que mencionen:
+   - "Ministerio de Trabajo" o "Relaciones Laborales"
+   - "Laboral"
+
+Para TRÁMITES DE IDENTIDAD:
+✅ BUSCA: Oficinas que mencionen:
+   - "Registro Civil"
+
+**PASO 4: PRIORIZACIÓN**
+1. PRIMERO: Oficinas con coincidencia EXACTA en nombre o descripción
+2. SEGUNDO: Oficinas con coincidencia parcial pero clara
+3. NO incluyas oficinas que NO tengan relación directa con el trámite
+
+**PASO 5: LISTAR RESULTADOS**
+- Lista TODAS las oficinas que encontraste relacionadas
+- Si hay múltiples opciones válidas, menciónalas todas
+- Para cada oficina, explica brevemente por qué es relevante según su descripción
 
 FORMATO DE RESPUESTA:
 
@@ -124,28 +170,87 @@ FORMATO DE RESPUESTA:
 [Consejos útiles para realizar el trámite]
 
 IMPORTANTE CRÍTICO: 
-- Si encuentras oficinas relacionadas aunque no sea una coincidencia exacta, menciónalas TODAS
-- Si el usuario pregunta sobre "territorio", "casa", "propiedad", etc., busca y lista TODAS las oficinas con "gestión territorial", "municipio", "GAD", "gobierno provincial" en sus descripciones
-- NO te limites a una sola oficina. Si hay un municipio Y un GAD relacionados, menciónalos AMBOS
-- Revisa CADA oficina de la lista y si su descripción tiene alguna relación, inclúyela
+- LEE COMPLETAMENTE la descripción de CADA oficina antes de decidir si es relevante
+- Para trámites de VEHÍCULOS, busca específicamente "ANT" o "Tránsito" en la descripción, NO incluyas GAD o municipios
+- Para trámites de TERRITORIO, busca "gestión territorial", "catastro", "municipio" o "GAD" en la descripción
+- PRIORIZA coincidencias exactas sobre coincidencias parciales
+- Si encuentras múltiples oficinas relacionadas, menciónalas todas
+- NO incluyas oficinas que NO tengan relación directa con el trámite específico
 
-Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones disponibles.
+Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones disponibles que sean realmente relevantes.
 ''';
 
       final content = [Content.text(prompt)];
       final response = await _model.generateContent(content);
 
+      // Obtener las oficinas encontradas (ordenadas por distancia si hay ubicación)
+      final foundOffices = officesWithDistance.map((item) => item['office'] as OfficeLocation).toList();
+      
       if (response.text != null && response.text!.isNotEmpty) {
-        return response.text!;
+        // Buscar oficinas mencionadas en la respuesta del AI
+        final mentionedOffices = _extractOfficesFromResponse(response.text!, foundOffices);
+        return OfficeSearchResult(
+          response: response.text!,
+          foundOffices: mentionedOffices.isNotEmpty ? mentionedOffices : foundOffices,
+        );
       } else {
-        final officesList = officesWithDistance.map((item) => item['office'] as OfficeLocation).toList();
-        return _getFallbackResponse(userMessage, officesList, userLocation: userLocation);
+        final officesList = foundOffices;
+        final fallbackResponse = _getFallbackResponse(userMessage, officesList, userLocation: userLocation);
+        return OfficeSearchResult(
+          response: fallbackResponse,
+          foundOffices: officesList,
+        );
       }
     } catch (e) {
       print('Error al buscar oficinas: $e');
       // En caso de error, usar la lista original de oficinas sin distancias
-      return _getFallbackResponse(userMessage, offices, userLocation: userLocation);
+      final fallbackResponse = _getFallbackResponse(userMessage, offices, userLocation: userLocation);
+      final matchingOffices = searchOfficesByKeywords(userMessage, offices);
+      return OfficeSearchResult(
+        response: fallbackResponse,
+        foundOffices: matchingOffices,
+      );
     }
+  }
+
+  /// Extrae las oficinas mencionadas en la respuesta del AI
+  List<OfficeLocation> _extractOfficesFromResponse(String response, List<OfficeLocation> allOffices) {
+    final foundOffices = <OfficeLocation>[];
+    final lowerResponse = response.toLowerCase();
+    
+    for (final office in allOffices) {
+      final officeName = office.name.toLowerCase();
+      final officeDesc = office.description.toLowerCase();
+      
+      // Buscar si el nombre completo de la oficina aparece en la respuesta
+      if (lowerResponse.contains(officeName)) {
+        foundOffices.add(office);
+      } else {
+        // Buscar palabras clave del nombre en la respuesta
+        final nameWords = officeName.split(' ');
+        int matches = 0;
+        for (final word in nameWords) {
+          if (word.length > 3 && lowerResponse.contains(word)) {
+            matches++;
+          }
+        }
+        // Si al menos 2 palabras del nombre aparecen, considerarlo
+        if (matches >= 2) {
+          foundOffices.add(office);
+        } else {
+          // Buscar términos clave de la descripción
+          if (officeDesc.contains('ant') && lowerResponse.contains('ant')) {
+            foundOffices.add(office);
+          } else if (officeDesc.contains('tránsito') && lowerResponse.contains('tránsito')) {
+            foundOffices.add(office);
+          } else if (officeDesc.contains('agencia nacional') && lowerResponse.contains('agencia')) {
+            foundOffices.add(office);
+          }
+        }
+      }
+    }
+    
+    return foundOffices;
   }
 
   /// Busca oficinas específicas basándose en palabras clave
@@ -155,6 +260,23 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     final lowerQuery = query.toLowerCase();
     final keywords = _extractKeywords(lowerQuery);
     
+    // Detectar tipo de trámite para priorización
+    final isVehicleQuery = lowerQuery.contains('carro') || 
+                          lowerQuery.contains('auto') || 
+                          lowerQuery.contains('vehículo') || 
+                          lowerQuery.contains('moto') ||
+                          lowerQuery.contains('matrícula') ||
+                          lowerQuery.contains('licencia') ||
+                          lowerQuery.contains('tránsito');
+    
+    final isTerritoryQuery = lowerQuery.contains('territorio') || 
+                            lowerQuery.contains('casa') || 
+                            lowerQuery.contains('terreno') ||
+                            lowerQuery.contains('lote') ||
+                            lowerQuery.contains('predio') ||
+                            lowerQuery.contains('catastro') ||
+                            lowerQuery.contains('propiedad');
+    
     final matches = <OfficeLocation>[];
     final matchScores = <OfficeLocation, int>{};
     
@@ -163,16 +285,62 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
       final officeDesc = office.description.toLowerCase();
       int score = 0;
       
+      // Priorización especial para trámites de vehículos
+      if (isVehicleQuery) {
+        // Priorizar ANT sobre otras oficinas
+        if (officeName.contains('ant') || 
+            officeName.contains('agencia nacional de tránsito') ||
+            officeDesc.contains('ant') ||
+            officeDesc.contains('agencia nacional de tránsito') ||
+            officeDesc.contains('tránsito')) {
+          score += 10; // Puntuación muy alta para ANT
+        }
+        // Penalizar GAD y municipios para trámites de vehículos
+        if (officeName.contains('gad') || 
+            officeName.contains('municipio') ||
+            officeDesc.contains('gad') ||
+            officeDesc.contains('municipio') ||
+            officeDesc.contains('gestión territorial')) {
+          score -= 5; // Penalización para evitar recomendarlos
+        }
+      }
+      
+      // Priorización especial para trámites de territorio
+      if (isTerritoryQuery) {
+        // Priorizar oficinas con gestión territorial
+        if (officeDesc.contains('gestión territorial') ||
+            officeDesc.contains('catastro') ||
+            officeName.contains('municipio') ||
+            officeName.contains('gad') ||
+            officeDesc.contains('municipio') ||
+            officeDesc.contains('gad')) {
+          score += 5;
+        }
+        // Penalizar ANT para trámites de territorio
+        if (officeName.contains('ant') || officeDesc.contains('tránsito')) {
+          score -= 5;
+        }
+      }
+      
       // Buscar coincidencias por palabras clave
       for (final keyword in keywords) {
-        // Coincidencia en el nombre (mayor peso)
-        if (officeName.contains(keyword)) {
+        // Coincidencia exacta en el nombre (mayor peso)
+        if (officeName == keyword || officeName.contains(' $keyword ') || 
+            officeName.startsWith('$keyword ') || officeName.endsWith(' $keyword')) {
+          score += 5;
+        } else if (officeName.contains(keyword)) {
           score += 3;
         }
-        // Coincidencia en la descripción (peso medio)
-        if (officeDesc.contains(keyword)) {
+        
+        // Coincidencia exacta en la descripción
+        if (officeDesc.contains(' $keyword ') || 
+            officeDesc.startsWith('$keyword ') || 
+            officeDesc.endsWith(' $keyword')) {
+          score += 4;
+        } else if (officeDesc.contains(keyword)) {
           score += 2;
         }
+        
         // Coincidencia parcial en palabras individuales
         final keywordWords = keyword.split(' ');
         for (final word in keywordWords) {
@@ -217,26 +385,43 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     final keywords = <String>[];
     
     // Palabras clave relacionadas con trámites comunes
+    // IMPORTANTE: Para vehículos, priorizar ANT sobre otras oficinas
     final tramiteKeywords = {
-      'carro': ['tránsito', 'ant', 'vehículo', 'automotor', 'matrícula', 'licencia'],
-      'vehículo': ['tránsito', 'ant', 'automotor', 'matrícula'],
-      'licencia': ['tránsito', 'ant', 'conducir'],
+      // Trámites de vehículos - PRIORIDAD ALTA para ANT
+      'carro': ['ant', 'agencia nacional de tránsito', 'tránsito', 'vehículo', 'automotor', 'matrícula', 'licencia'],
+      'auto': ['ant', 'agencia nacional de tránsito', 'tránsito', 'vehículo', 'automotor', 'matrícula'],
+      'vehículo': ['ant', 'agencia nacional de tránsito', 'tránsito', 'automotor'],
+      'moto': ['ant', 'agencia nacional de tránsito', 'tránsito', 'vehículo', 'automotor'],
+      'licencia': ['ant', 'agencia nacional de tránsito', 'tránsito', 'conducir'],
+      'matrícula': ['ant', 'agencia nacional de tránsito', 'tránsito', 'vehículo', 'automotor'],
+      'trámite': ['ant', 'agencia nacional de tránsito'], // Contexto adicional
+      
+      // Trámites de identidad
       'cédula': ['registro civil', 'identidad'],
       'pasaporte': ['migración', 'extranjería'],
-      'impuesto': ['sri', 'tributario', 'fiscal'],
-      'trabajo': ['ministerio trabajo', 'laboral', 'relaciones laborales'],
+      
+      // Trámites de impuestos
+      'impuesto': ['sri', 'servicio de rentas internas', 'tributario', 'fiscal', 'rentas'],
+      'tributario': ['sri', 'servicio de rentas internas'],
+      
+      // Trámites de trabajo
+      'trabajo': ['ministerio trabajo', 'relaciones laborales', 'laboral'],
+      'laboral': ['ministerio trabajo', 'relaciones laborales'],
+      
+      // Trámites de salud y educación
       'salud': ['ministerio salud', 'salud pública'],
       'educación': ['ministerio educación', 'educación'],
-      // Términos relacionados con territorio y propiedad
-      'territorio': ['territorial', 'gestión territorial', 'municipio', 'gobierno provincial', 'catastro', 'predio'],
-      'territorial': ['territorio', 'gestión territorial', 'municipio', 'gobierno provincial', 'catastro'],
+      
+      // Términos relacionados con territorio y propiedad - NO incluir para vehículos
+      'territorio': ['territorial', 'gestión territorial', 'municipio', 'gobierno provincial', 'gad', 'catastro', 'predio'],
+      'territorial': ['territorio', 'gestión territorial', 'municipio', 'gobierno provincial', 'gad', 'catastro'],
       'propiedad': ['catastro', 'municipio', 'territorio', 'predio', 'lote', 'terreno'],
       'casa': ['catastro', 'municipio', 'territorio', 'predio', 'lote', 'terreno', 'propiedad'],
       'terreno': ['catastro', 'municipio', 'territorio', 'predio', 'lote', 'propiedad'],
       'lote': ['catastro', 'municipio', 'territorio', 'predio', 'terreno', 'propiedad'],
       'predio': ['catastro', 'municipio', 'territorio', 'lote', 'terreno', 'propiedad'],
       'catastro': ['municipio', 'territorio', 'predio', 'lote', 'terreno', 'propiedad'],
-      'información': ['municipio', 'gobierno provincial', 'gestión'],
+      'información': ['municipio', 'gobierno provincial', 'gad', 'gestión'],
     };
     
     for (final entry in tramiteKeywords.entries) {

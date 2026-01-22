@@ -5,6 +5,7 @@ import '../providers/offices_provider.dart';
 import '../providers/location_provider.dart';
 import '../theme/app_colors.dart';
 import '../providers/theme_provider.dart';
+import '../models/office_location.dart';
 
 class AiAssistantScreen extends ConsumerStatefulWidget {
   const AiAssistantScreen({super.key});
@@ -65,7 +66,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
 
     try {
       // Obtener respuesta del asistente AI con ubicación del usuario
-      final response = await _aiService.findOfficesForTransaction(
+      final result = await _aiService.findOfficesForTransaction(
         message,
         offices,
         userLocation: userLocation,
@@ -73,9 +74,10 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
 
       setState(() {
         _messages.add(ChatMessage(
-          text: response,
+          text: result.response,
           isUser: false,
           timestamp: DateTime.now(),
+          recommendedOffices: result.foundOffices.isNotEmpty ? result.foundOffices : null,
         ));
         _isLoading = false;
       });
@@ -373,11 +375,13 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final List<OfficeLocation>? recommendedOffices;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.recommendedOffices,
   });
 }
 
