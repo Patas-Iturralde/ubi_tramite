@@ -774,8 +774,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// Abre WhatsApp con un mensaje predeterminado
   Future<void> _openWhatsApp() async {
     // Número: 0958775282 con código de país +593 = 593958775282 (sin el 0 inicial)
-    const phoneNumber = '593958775282';
-    const message = 'Hola, me interesa mejorar mi cuenta a Premium.';
+    //+593 98 384 8082
+    const phoneNumber = '593983848082';
+    const message = 'Hola, me interesa mejorar mi cuenta de TuGuiApp a Premium.';
     final encodedMessage = Uri.encodeComponent(message);
     
     try {
