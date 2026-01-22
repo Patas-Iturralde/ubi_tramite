@@ -24,6 +24,7 @@ import '../services/auth_service.dart';
 import '../services/directions_service.dart';
 import '../providers/theme_provider.dart';
 import 'login_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Pantalla principal que muestra el mapa interactivo con oficinas gubernamentales
 class MapScreen extends ConsumerStatefulWidget {
@@ -770,11 +771,78 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     } catch (_) {}
   }
 
+  /// Abre WhatsApp con un mensaje predeterminado
+  Future<void> _openWhatsApp() async {
+    // Número: 0958775282 con código de país +593 = 593958775282 (sin el 0 inicial)
+    const phoneNumber = '593958775282';
+    const message = 'Hola, me interesa mejorar mi cuenta a Premium.';
+    final encodedMessage = Uri.encodeComponent(message);
+    
+    try {
+      // Intentar primero con el esquema directo de WhatsApp (más confiable en Android)
+      final whatsappUrl = 'whatsapp://send?phone=$phoneNumber&text=$encodedMessage';
+      final whatsappUri = Uri.parse(whatsappUrl);
+      
+      if (await canLaunchUrl(whatsappUri)) {
+        await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+      } else {
+        // Si no funciona, intentar con wa.me (funciona en web y algunos dispositivos)
+        final url = 'https://wa.me/$phoneNumber?text=$encodedMessage';
+        final uri = Uri.parse(url);
+        
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No se pudo abrir WhatsApp. Asegúrate de tener WhatsApp instalado.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // Si falla, intentar directamente sin verificar (a veces canLaunchUrl falla pero launchUrl funciona)
+      try {
+        final whatsappUrl = 'whatsapp://send?phone=$phoneNumber&text=$encodedMessage';
+        final whatsappUri = Uri.parse(whatsappUrl);
+        await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+      } catch (e2) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al abrir WhatsApp: $e2'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Obtiene el nombre del tipo de usuario en español
+  String _getRoleName(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return 'Administrador';
+      case UserRole.premium:
+        return 'Premium';
+      case UserRole.advisor:
+        return 'Asesor';
+      case UserRole.standard:
+        return 'Estándar';
+    }
+  }
+
   /// Construye el Drawer lateral con el menú de la app
   Widget _buildDrawer() {
     final themeMode = ref.watch(themeModeProvider);
     final isDark = themeMode == ThemeMode.dark;
     final roleAsync = ref.watch(userRoleProvider);
+    final authState = ref.watch(authStateChangesProvider);
+    
     return Drawer(
       child: Column(
         children: [
@@ -790,23 +858,125 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 ],
               ),
             ),
-            child: const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.menu, color: AppColors.white, size: 40),
-                  SizedBox(height: 8),
-                  Text(
-                    'Menú - TuGuiApp',
-                    style: TextStyle(
-                      color: AppColors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+            child: authState.when(
+              data: (user) {
+                if (user == null) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.menu, color: AppColors.white, size: 40),
+                        SizedBox(height: 8),
+                        Text(
+                          'Menú - TuGuiApp',
+                          style: TextStyle(
+                            color: AppColors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                
+                return roleAsync.when(
+                  data: (role) {
+                    final userName = user.displayName ?? user.email?.split('@')[0] ?? 'Usuario';
+                    final roleName = _getRoleName(role);
+                    
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: AppColors.white.withOpacity(0.2),
+                          child: Text(
+                            userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                            style: const TextStyle(
+                              color: AppColors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          userName,
+                          style: const TextStyle(
+                            color: AppColors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            roleName,
+                            style: const TextStyle(
+                              color: AppColors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: AppColors.white),
+                  ),
+                  error: (_, __) => const Center(
+                    child: Text(
+                      'Error al cargar',
+                      style: TextStyle(color: AppColors.white),
                     ),
                   ),
-                ],
+                );
+              },
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: AppColors.white),
+              ),
+              error: (_, __) => const Center(
+                child: Text(
+                  'Error',
+                  style: TextStyle(color: AppColors.white),
+                ),
               ),
             ),
+          ),
+          // Botón para mejorar cuenta (solo para usuarios standard)
+          roleAsync.when(
+            data: (role) {
+              if (role == UserRole.standard) {
+                return Container(
+                  margin: const EdgeInsets.all(16),
+                  child: ElevatedButton.icon(
+                    onPressed: _openWhatsApp,
+                    icon: const Icon(Icons.upgrade, size: 20),
+                    label: const Text('Mejorar a Premium'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondaryColor,
+                      foregroundColor: AppColors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
           ),
           ListTile(
             leading: const Icon(Icons.map),
@@ -818,9 +988,23 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             title: const Text('Chat en Vivo'),
             onTap: () {
               Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ChatScreen()),
-              );
+              final roleAsync = ref.read(userRoleProvider);
+              roleAsync.whenData((role) {
+                if (role != UserRole.premium && role != UserRole.admin) {
+                  // Usuario no premium, mostrar mensaje
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('El chat en vivo es una función Premium. Actualiza tu cuenta para acceder.'),
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                } else {
+                  // Usuario premium o admin, permitir acceso
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ChatScreen()),
+                  );
+                }
+              });
             },
           ),
           ListTile(

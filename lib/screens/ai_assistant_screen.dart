@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/ai_assistant_service.dart';
+import '../services/ai_message_counter_service.dart';
 import '../providers/offices_provider.dart';
 import '../providers/location_provider.dart';
+import '../providers/auth_provider.dart';
+import '../models/user_role.dart';
 import '../theme/app_colors.dart';
 import '../providers/theme_provider.dart';
 import '../models/office_location.dart';
@@ -44,6 +47,40 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
     final message = _messageController.text.trim();
     if (message.isEmpty || _isLoading) return;
 
+    // Verificar si el usuario es premium
+    final roleAsync = ref.read(userRoleProvider);
+    final role = roleAsync.value;
+    if (role == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al verificar tu cuenta. Por favor, intenta nuevamente.')),
+      );
+      return;
+    }
+    final isPremium = role == UserRole.premium || role == UserRole.admin;
+
+    // Verificar si puede enviar mensajes
+    final canSend = await AiMessageCounterService.canSendMessage(isPremium);
+    
+    if (!canSend) {
+      // Mostrar mensaje de que se agotaron los mensajes gratuitos
+      final remaining = await AiMessageCounterService.getRemainingMessages(isPremium);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            remaining == 0
+                ? 'Has agotado tu mensaje gratuito. Actualiza a Premium para mensajes ilimitados.'
+                : 'Tienes $remaining mensaje(s) restante(s).',
+          ),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'Cerrar',
+            onPressed: () {},
+          ),
+        ),
+      );
+      return;
+    }
+
     // Agregar mensaje del usuario
     setState(() {
       _messages.add(ChatMessage(
@@ -71,6 +108,11 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
         offices,
         userLocation: userLocation,
       );
+
+      // Incrementar contador de mensajes solo si no es premium
+      if (!isPremium) {
+        await AiMessageCounterService.incrementMessageCount();
+      }
 
       setState(() {
         _messages.add(ChatMessage(
@@ -118,189 +160,228 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
         children: [
           // Área de mensajes
           Expanded(
-            child: _messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.smart_toy,
-                          size: 64,
-                          color: isDark ? Colors.grey[600] : Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '¿En qué trámite necesitas ayuda?',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: isDark ? Colors.grey[400] : Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: Text(
-                            'Ejemplo: "Quiero hacer el trámite de mi carro"',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isDark ? Colors.grey[500] : Colors.grey[500],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _messages.length + (_isLoading ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _messages.length) {
-                        // Indicador de carga
-                        return Padding(
-                          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryColor,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.smart_toy,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? Colors.grey[800] : Colors.grey[200],
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                      SizedBox(width: 8),
-                                      Text('Pensando...'),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      final message = _messages[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          mainAxisAlignment: message.isUser
-                              ? MainAxisAlignment.end
-                              : MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+            child: ref.watch(userRoleProvider).when(
+              data: (role) {
+                final isPremium = role == UserRole.premium || role == UserRole.admin;
+                return _messages.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if (!message.isUser) ...[
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryColor,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.smart_toy,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
+                            Icon(
+                              Icons.smart_toy,
+                              size: 64,
+                              color: isDark ? Colors.grey[600] : Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '¿En qué trámite necesitas ayuda?',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                fontWeight: FontWeight.w500,
                               ),
-                              const SizedBox(width: 12),
-                            ],
-                            Flexible(
-                              child: Container(
-                                constraints: BoxConstraints(
-                                  maxWidth: MediaQuery.of(context).size.width * 0.75,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: message.isUser
-                                      ? AppColors.primaryColor
-                                      : (isDark
-                                          ? Colors.grey[800]
-                                          : Colors.grey[200]),
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(16),
-                                    topRight: const Radius.circular(16),
-                                    bottomLeft: Radius.circular(message.isUser ? 16 : 4),
-                                    bottomRight: Radius.circular(message.isUser ? 4 : 16),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SelectableText(
-                                      message.text,
-                                      style: TextStyle(
-                                        color: message.isUser
-                                            ? Colors.white
-                                            : (isDark
-                                                ? Colors.white
-                                                : Colors.black87),
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Align(
-                                      alignment: Alignment.bottomRight,
-                                      child: Text(
-                                        _formatTime(message.timestamp),
-                                        style: TextStyle(
-                                          color: message.isUser
-                                              ? Colors.white70
-                                              : Colors.grey[600],
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                            ),
+                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 32),
+                              child: Text(
+                                'Ejemplo: "Quiero hacer el trámite de mi carro"',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: isDark ? Colors.grey[500] : Colors.grey[500],
                                 ),
                               ),
                             ),
-                            if (message.isUser) ...[
-                              const SizedBox(width: 12),
-                              CircleAvatar(
-                                radius: 16,
-                                backgroundColor: AppColors.mediumBlue,
-                                child: const Icon(
-                                  Icons.person,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
+                            if (!isPremium) ...[
+                              const SizedBox(height: 24),
+                              FutureBuilder<int>(
+                                future: AiMessageCounterService.getRemainingMessages(isPremium),
+                                builder: (context, snapshot) {
+                                  final remaining = snapshot.data ?? 1;
+                                  return Container(
+                                    padding: const EdgeInsets.all(12),
+                                    margin: const EdgeInsets.symmetric(horizontal: 32),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.orange[900]?.withOpacity(0.3) : Colors.orange[100],
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.orange,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      remaining > 0
+                                          ? 'Tienes $remaining mensaje(s) gratuito(s) restante(s)'
+                                          : 'Has agotado tu mensaje gratuito. Actualiza a Premium para mensajes ilimitados.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.orange[300] : Colors.orange[900],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ],
                         ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _messages.length + (_isLoading ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == _messages.length) {
+                            // Indicador de carga
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.smart_toy,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? Colors.grey[800] : Colors.grey[200],
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text('Pensando...'),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final message = _messages[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              mainAxisAlignment: message.isUser
+                                  ? MainAxisAlignment.end
+                                  : MainAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!message.isUser) ...[
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.smart_toy,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                Flexible(
+                                  child: Container(
+                                    constraints: BoxConstraints(
+                                      maxWidth: MediaQuery.of(context).size.width * 0.75,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: message.isUser
+                                          ? AppColors.primaryColor
+                                          : (isDark
+                                              ? Colors.grey[800]
+                                              : Colors.grey[200]),
+                                      borderRadius: BorderRadius.only(
+                                        topLeft: const Radius.circular(16),
+                                        topRight: const Radius.circular(16),
+                                        bottomLeft: Radius.circular(message.isUser ? 16 : 4),
+                                        bottomRight: Radius.circular(message.isUser ? 4 : 16),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        SelectableText(
+                                          message.text,
+                                          style: TextStyle(
+                                            color: message.isUser
+                                                ? Colors.white
+                                                : (isDark
+                                                    ? Colors.white
+                                                    : Colors.black87),
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Align(
+                                          alignment: Alignment.bottomRight,
+                                          child: Text(
+                                            _formatTime(message.timestamp),
+                                            style: TextStyle(
+                                              color: message.isUser
+                                                  ? Colors.white70
+                                                  : Colors.grey[600],
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                if (message.isUser) ...[
+                                  const SizedBox(width: 12),
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: AppColors.mediumBlue,
+                                    child: const Icon(
+                                      Icons.person,
+                                      color: Colors.white,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
                       );
-                    },
-                  ),
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => const Center(child: Text('Error al cargar información')),
+            ),
           ),
           // Campo de entrada de mensaje
           Container(
