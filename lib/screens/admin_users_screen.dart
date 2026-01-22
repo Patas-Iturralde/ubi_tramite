@@ -22,6 +22,7 @@ class AdminUsersScreen extends ConsumerStatefulWidget {
 class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
+  UserRole? _selectedRoleFilter;
 
   @override
   void dispose() {
@@ -44,7 +45,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
       ),
       body: Column(
         children: [
-          // Barra de búsqueda
+          // Barra de búsqueda y filtros
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -57,128 +58,201 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                 ),
               ],
             ),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Buscar por email, nombre o UID',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _query = '');
-                        },
-                      ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _searchCtrl,
+                  onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar por email, nombre o UID',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
+                    ),
+                    filled: true,
+                    fillColor: isDark ? Colors.grey[800] : Colors.grey[100],
+                  ),
                 ),
-                filled: true,
-                fillColor: isDark ? Colors.grey[800] : Colors.grey[100],
-              ),
+                const SizedBox(height: 12),
+                // Filtros por rol
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip(
+                        'Todos',
+                        _selectedRoleFilter == null,
+                        isDark,
+                        onTap: () => setState(() => _selectedRoleFilter = null),
+                      ),
+                      const SizedBox(width: 8),
+                      ...UserRole.values.map((role) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _buildFilterChip(
+                          _getRoleName(role),
+                          _selectedRoleFilter == role,
+                          isDark,
+                          color: _getRoleColor(role),
+                          onTap: () => setState(() => _selectedRoleFilter = role),
+                        ),
+                      )),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           // Lista de usuarios
           Expanded(
             child: usersAsync.when(
               data: (users) {
-                final list = users.where((u) {
+                final filteredUsers = users.where((u) {
+                  if (_selectedRoleFilter != null && u.role != _selectedRoleFilter) {
+                    return false;
+                  }
                   if (_query.isEmpty) return true;
                   final query = _query.toLowerCase();
                   return (u.email ?? '').toLowerCase().contains(query) ||
                          (u.displayName ?? '').toLowerCase().contains(query) ||
                          u.uid.toLowerCase().contains(query);
                 }).toList();
-                
-                if (list.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.people_outline,
-                          size: 64,
-                          color: isDark ? Colors.grey[600] : Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _query.isEmpty ? 'No hay usuarios' : 'No se encontraron usuarios',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      color: isDark ? Colors.grey[850] : Colors.grey[50],
+                      child: Row(
+                        children: [
+                          Icon(Icons.people, size: 20, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Total: ${users.length} usuarios',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.grey[300] : Colors.grey[700],
+                            ),
                           ),
-                        ),
-                      ],
+                          const Spacer(),
+                          if (_selectedRoleFilter != null || _query.isNotEmpty)
+                            TextButton.icon(
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() {
+                                  _query = '';
+                                  _selectedRoleFilter = null;
+                                });
+                              },
+                              icon: const Icon(Icons.clear_all, size: 16),
+                              label: const Text('Limpiar filtros'),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  );
-                }
-                
-                return ListView.separated(
-                  padding: const EdgeInsets.all(8),
-                  itemCount: list.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (ctx, i) {
-                    final u = list[i];
-                    return _UserCard(
-                      user: u,
-                      onRoleChanged: (r) async {
-                        await AuthService.updateUserRole(uid: u.uid, role: r);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Rol actualizado a: ${_getRoleName(r)}'),
-                              backgroundColor: Colors.green,
-                              duration: const Duration(seconds: 2),
+                    // Lista de usuarios
+                    Expanded(
+                    child: filteredUsers.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.people_outline,
+                                  size: 64,
+                                  color: isDark ? Colors.grey[600] : Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _query.isEmpty && _selectedRoleFilter == null
+                                      ? 'No hay usuarios'
+                                      : 'No se encontraron usuarios',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
-                          );
-                          // Invalidar provider para actualizar UI
-                          ref.invalidate(userRoleProvider);
-                        }
-                      },
-                      onNameChanged: (newName) async {
-                        await AuthService.updateDisplayName(uid: u.uid, displayName: newName);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Nombre actualizado correctamente'),
-                              backgroundColor: Colors.green,
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      },
-                      onDelete: () async {
-                        final ok = await _confirmDelete(context, u);
-                        if (!ok) return;
-                        try {
-                          await AuthService.deleteUserDoc(uid: u.uid);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Usuario eliminado correctamente'),
-                                backgroundColor: Colors.green,
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error al eliminar usuario: $e'),
-                                backgroundColor: Colors.red,
-                                duration: const Duration(seconds: 3),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                    );
-                  },
-                );
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: filteredUsers.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            itemBuilder: (ctx, i) {
+                              final u = filteredUsers[i];
+                              return _UserCard(
+                                user: u,
+                                onRoleChanged: (r) async {
+                                  await AuthService.updateUserRole(uid: u.uid, role: r);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Rol actualizado a: ${_getRoleName(r)}'),
+                                        backgroundColor: Colors.green,
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                    ref.invalidate(userRoleProvider);
+                                  }
+                                },
+                                onNameChanged: (newName) async {
+                                  await AuthService.updateDisplayName(uid: u.uid, displayName: newName);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Nombre actualizado correctamente'),
+                                        backgroundColor: Colors.green,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                },
+                                onDelete: () async {
+                                  final ok = await _confirmDelete(context, u);
+                                  if (!ok) return;
+                                  try {
+                                    await AuthService.deleteUserDoc(uid: u.uid);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Usuario eliminado correctamente'),
+                                          backgroundColor: Colors.green,
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Error al eliminar usuario: $e'),
+                                          backgroundColor: Colors.red,
+                                          duration: const Duration(seconds: 3),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(
@@ -194,6 +268,44 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(
+    String label,
+    bool isSelected,
+    bool isDark, {
+    Color? color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (color ?? AppColors.primaryColor).withOpacity(0.2)
+              : (isDark ? Colors.grey[800] : Colors.grey[200]),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? (color ?? AppColors.primaryColor)
+                : (isDark ? Colors.grey[700]! : Colors.grey[300]!),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected
+                ? (color ?? AppColors.primaryColor)
+                : (isDark ? Colors.grey[300] : Colors.grey[700]),
+          ),
+        ),
       ),
     );
   }
@@ -218,6 +330,19 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
           ),
         ) ??
         false;
+  }
+
+  Color _getRoleColor(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return Colors.red;
+      case UserRole.premium:
+        return Colors.amber;
+      case UserRole.advisor:
+        return Colors.blue;
+      case UserRole.standard:
+        return Colors.grey;
+    }
   }
 
   String _getRoleName(UserRole role) {
@@ -267,7 +392,6 @@ class _UserCardState extends State<_UserCard> {
   @override
   void didUpdateWidget(_UserCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Actualizar cuando cambie el widget (datos actualizados desde Firestore)
     if (oldWidget.user.role != widget.user.role) {
       _currentRole = widget.user.role;
     }
@@ -389,55 +513,126 @@ class _UserCardState extends State<_UserCard> {
     }
   }
 
+  IconData _getRoleIcon(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return Icons.admin_panel_settings;
+      case UserRole.premium:
+        return Icons.star;
+      case UserRole.advisor:
+        return Icons.person_outline;
+      case UserRole.standard:
+        return Icons.person;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final roleColor = _getRoleColor(_currentRole);
     
     return Card(
-      elevation: 2,
+      elevation: 1,
       margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isDark ? Colors.grey[700]! : Colors.grey[200]!,
+          width: 1,
+        ),
+      ),
       color: isDark ? Colors.grey[850] : Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header con nombre y email
+            // Header con información del usuario
             Row(
               children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: AppColors.primaryColor.withOpacity(0.2),
-                  child: Text(
-                    _currentName.isNotEmpty ? _currentName[0].toUpperCase() : 'U',
-                    style: TextStyle(
-                      color: AppColors.primaryColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
+                // Avatar
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        roleColor,
+                        roleColor.withOpacity(0.7),
+                      ],
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _currentName.isNotEmpty ? _currentName[0].toUpperCase() : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
+                // Información del usuario
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _currentName,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _currentName,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // Badge de rol
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: roleColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: roleColor, width: 1),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _getRoleIcon(_currentRole),
+                                  size: 14,
+                                  color: roleColor,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _getRoleName(_currentRole),
+                                  style: TextStyle(
+                                    color: roleColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
                         widget.user.email ?? 'Sin email',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: isDark ? Colors.grey[400] : Colors.grey[600],
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -445,25 +640,7 @@ class _UserCardState extends State<_UserCard> {
               ],
             ),
             const SizedBox(height: 16),
-            // Badge de rol
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: roleColor.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: roleColor, width: 1.5),
-              ),
-              child: Text(
-                _getRoleName(_currentRole),
-                style: TextStyle(
-                  color: roleColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Controles
+            // Controles de acción
             Row(
               children: [
                 // Botón editar nombre
@@ -477,9 +654,12 @@ class _UserCardState extends State<_UserCard> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.edit, size: 18),
-                    label: const Text('Editar nombre'),
+                    label: const Text('Nombre'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
@@ -499,6 +679,13 @@ class _UserCardState extends State<_UserCard> {
                       value: _currentRole,
                       isExpanded: true,
                       underline: const SizedBox(),
+                      icon: _isUpdatingRole
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.arrow_drop_down),
                       onChanged: _isUpdatingRole
                           ? null
                           : (r) {
@@ -577,8 +764,8 @@ class _UserCardState extends State<_UserCard> {
                           );
                           if (ok == true) {
                             await widget.onDelete();
-                        }
-                      },
+                          }
+                        },
                   icon: const Icon(Icons.delete_outline),
                   color: Colors.red,
                   tooltip: 'Eliminar usuario',
@@ -591,10 +778,13 @@ class _UserCardState extends State<_UserCard> {
                 padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   children: [
-                    const SizedBox(
+                    SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(roleColor),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
