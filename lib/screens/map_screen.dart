@@ -990,7 +990,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               Navigator.of(context).pop();
               final roleAsync = ref.read(userRoleProvider);
               roleAsync.whenData((role) {
-                if (role != UserRole.premium && role != UserRole.admin) {
+                if (role != UserRole.premium && role != UserRole.admin && role != UserRole.advisor) {
                   // Usuario no premium, mostrar mensaje
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -999,7 +999,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     ),
                   );
                 } else {
-                  // Usuario premium o admin, permitir acceso
+                  // Usuario premium, admin o advisor, permitir acceso
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const ChatScreen()),
                   );

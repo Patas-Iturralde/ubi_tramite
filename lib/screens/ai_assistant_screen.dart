@@ -56,7 +56,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
       );
       return;
     }
-    final isPremium = role == UserRole.premium || role == UserRole.admin;
+    final isPremium = role == UserRole.premium || role == UserRole.admin || role == UserRole.advisor;
 
     // Verificar si puede enviar mensajes
     final canSend = await AiMessageCounterService.canSendMessage(isPremium);
@@ -162,7 +162,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
           Expanded(
             child: ref.watch(userRoleProvider).when(
               data: (role) {
-                final isPremium = role == UserRole.premium || role == UserRole.admin;
+                final isPremium = role == UserRole.premium || role == UserRole.admin || role == UserRole.advisor;
                 return _messages.isEmpty
                     ? Center(
                         child: Column(

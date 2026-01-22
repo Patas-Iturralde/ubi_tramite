@@ -8,6 +8,7 @@ class ChatMessage {
   final String text;
   final DateTime timestamp;
   final bool isAdmin;
+  final bool isAdvisor;
 
   ChatMessage({
     required this.id,
@@ -17,6 +18,7 @@ class ChatMessage {
     required this.text,
     required this.timestamp,
     this.isAdmin = false,
+    this.isAdvisor = false,
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -29,6 +31,7 @@ class ChatMessage {
       text: data['text'] ?? '',
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isAdmin: data['isAdmin'] ?? false,
+      isAdvisor: data['isAdvisor'] ?? false,
     );
   }
 
@@ -40,6 +43,7 @@ class ChatMessage {
       'text': text,
       'timestamp': Timestamp.fromDate(timestamp),
       'isAdmin': isAdmin,
+      'isAdvisor': isAdvisor,
     };
   }
 }

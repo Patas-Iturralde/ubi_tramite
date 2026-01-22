@@ -36,13 +36,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     setState(() => _isSending = true);
     try {
       final roleAsync = ref.read(userRoleProvider);
-      final isAdmin = roleAsync.when(
-        data: (role) => role == UserRole.admin,
-        loading: () => false,
-        error: (_, __) => false,
+      final role = roleAsync.when(
+        data: (r) => r,
+        loading: () => UserRole.standard,
+        error: (_, __) => UserRole.standard,
       );
+      final isAdmin = role == UserRole.admin;
+      final isAdvisor = role == UserRole.advisor;
 
-      await ChatService.sendMessage(text, isAdmin: isAdmin);
+      await ChatService.sendMessage(text, isAdmin: isAdmin, isAdvisor: isAdvisor);
       _messageController.clear();
       _focusNode.unfocus();
       
@@ -219,6 +221,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     final message = messages[index];
                     final isCurrentUser = message.userId == currentUser?.uid;
                     final isAdmin = message.isAdmin;
+                    final isAdvisor = message.isAdvisor;
 
                     return roleAsync.when(
                       data: (role) {
@@ -263,15 +266,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                       if (!isCurrentUser)
                                         Padding(
                                           padding: const EdgeInsets.only(bottom: 3),
-                                          child: Text(
-                                            message.userName,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: isDark
-                                                  ? Colors.white70
-                                                  : Colors.grey[700],
-                                            ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                message.userName,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isDark
+                                                      ? Colors.white70
+                                                      : Colors.grey[700],
+                                                ),
+                                              ),
+                                              if (isAdvisor) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue,
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: const Text(
+                                                    'Asesor',
+                                                    style: TextStyle(
+                                                      fontSize: 9,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                         ),
                                       Container(

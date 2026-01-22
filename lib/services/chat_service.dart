@@ -12,7 +12,7 @@ class ChatService {
       _db.collection('chat_messages');
 
   // Enviar un mensaje
-  static Future<void> sendMessage(String text, {bool isAdmin = false}) async {
+  static Future<void> sendMessage(String text, {bool isAdmin = false, bool isAdvisor = false}) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -24,6 +24,7 @@ class ChatService {
       text: text,
       timestamp: DateTime.now(),
       isAdmin: isAdmin,
+      isAdvisor: isAdvisor,
     );
 
     await _messagesCollection.add(message.toFirestore());
