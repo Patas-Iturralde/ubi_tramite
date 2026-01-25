@@ -65,6 +65,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   String? _errorMessage;
   List<OfficeLocation> _offices = [];
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _showTramites = false; // Toggle entre oficinas y trámites
   
   // Animación del panel (reemplazado por DraggableScrollableSheet)
 
@@ -1266,6 +1267,25 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     );
   }
 
+  /// Obtiene todos los trámites únicos de todas las oficinas con su oficina asociada
+  List<Map<String, dynamic>> _getAllTramites() {
+    final tramitesMap = <String, List<OfficeLocation>>{};
+    
+    for (final office in _offices) {
+      for (final tramite in office.tramites) {
+        if (!tramitesMap.containsKey(tramite)) {
+          tramitesMap[tramite] = [];
+        }
+        tramitesMap[tramite]!.add(office);
+      }
+    }
+    
+    return tramitesMap.entries.map((entry) => {
+      'tramite': entry.key,
+      'offices': entry.value,
+    }).toList()..sort((a, b) => (a['tramite'] as String).compareTo(b['tramite'] as String));
+  }
+
   /// Botón desplegable de oficinas desde abajo
   Widget _buildOfficesDropdownButton() {
     final officesState = ref.watch(officesProvider);
@@ -1275,6 +1295,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final sheetShadow = isDark ? Colors.black54 : AppColors.overlayDark;
     final titleColor = isDark ? Colors.white : AppColors.darkBlue;
     final subtitleColor = isDark ? Colors.white70 : AppColors.mediumBlue;
+    
+    final allTramites = _getAllTramites();
 
     return Align(
       alignment: Alignment.bottomCenter,
@@ -1322,17 +1344,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   children: [
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Oficinas Cercanas',
+                            _showTramites ? 'Trámites Disponibles' : 'Oficinas Cercanas',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: titleColor,
                                 ),
                           ),
                           Text(
-                            '${officesState.offices.length} oficinas disponibles',
+                            _showTramites 
+                                ? '${allTramites.length} trámites disponibles'
+                                : '${officesState.offices.length} oficinas disponibles',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: subtitleColor,
                                 ),
@@ -1340,10 +1364,34 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         ],
                       ),
                     ),
+                    // Botón toggle
+                    Container(
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.grey[800] : Colors.grey[200],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildToggleButton(
+                            'Oficinas',
+                            !_showTramites,
+                            isDark,
+                            () => setState(() => _showTramites = false),
+                          ),
+                          _buildToggleButton(
+                            'Trámites',
+                            _showTramites,
+                            isDark,
+                            () => setState(() => _showTramites = true),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 16),
               // Buscador
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1351,7 +1399,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   controller: _searchController,
                   onChanged: (v) => setState(() => _searchQuery = v.trim()),
                   decoration: InputDecoration(
-                    hintText: 'Buscar oficinas...',
+                    hintText: _showTramites ? 'Buscar trámites...' : 'Buscar oficinas...',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _searchQuery.isEmpty
                         ? null
@@ -1386,6 +1434,22 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                         style: TextStyle(color: AppColors.mediumBlue)),
                   ),
                 )
+              else if (_showTramites)
+                // Mostrar trámites
+                ...allTramites
+                    .where((t) {
+                      if (_searchQuery.isEmpty) return true;
+                      final q = _searchQuery.toLowerCase();
+                      return (t['tramite'] as String).toLowerCase().contains(q);
+                    })
+                    .map((t) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: _buildTramiteCard(
+                            t['tramite'] as String,
+                            t['offices'] as List<OfficeLocation>,
+                          ),
+                        ))
+                    .toList()
               else if (officesState.offices.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(16),
@@ -1395,6 +1459,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                   ),
                 )
               else
+                // Mostrar oficinas
                 ...officesState.offices
                     .where((o) {
                       if (_searchQuery.isEmpty) return true;
@@ -1417,6 +1482,197 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
   
   // Panel inferior ahora es DraggableScrollableSheet
+
+  /// Botón toggle para alternar entre oficinas y trámites
+  Widget _buildToggleButton(String label, bool isSelected, bool isDark, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primaryColor
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected
+                ? Colors.white
+                : (isDark ? Colors.white70 : Colors.grey[700]),
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Tarjeta de trámite con sus oficinas asociadas
+  Widget _buildTramiteCard(String tramite, List<OfficeLocation> offices) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF2A2A2A) : Colors.white;
+    final borderCol = isDark ? Colors.grey[700]! : Colors.grey[300]!;
+    final textCol = isDark ? Colors.white : AppColors.darkBlue;
+    final subtitleCol = isDark ? Colors.white70 : AppColors.mediumBlue;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: (isDark ? Colors.black54 : AppColors.overlayDark).withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: borderCol,
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            // Si solo hay una oficina, mostrar su información
+            if (offices.length == 1) {
+              _showOfficeInfoDialog(offices.first);
+            } else {
+              // Si hay múltiples oficinas, mostrar un diálogo con todas
+              _showTramiteOfficesDialog(tramite, offices);
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryColor.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.description,
+                        color: AppColors.primaryColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tramite,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: textCol,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${offices.length} ${offices.length == 1 ? 'oficina disponible' : 'oficinas disponibles'}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: subtitleCol,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: subtitleCol,
+                    ),
+                  ],
+                ),
+                if (offices.length > 1) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: offices.take(3).map((office) {
+                      return Chip(
+                        label: Text(
+                          office.name,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        padding: EdgeInsets.zero,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      );
+                    }).toList(),
+                  ),
+                  if (offices.length > 3)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'y ${offices.length - 3} más...',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: subtitleCol,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Diálogo para mostrar todas las oficinas que ofrecen un trámite
+  Future<void> _showTramiteOfficesDialog(String tramite, List<OfficeLocation> offices) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Oficinas para: $tramite'),
+        backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: offices.length,
+            itemBuilder: (context, index) {
+              final office = offices[index];
+              return ListTile(
+                leading: const Icon(Icons.location_on, color: AppColors.primaryColor),
+                title: Text(office.name),
+                subtitle: Text(office.description),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showOfficeInfoDialog(office);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Tarjeta de oficina moderna
   Widget _buildOfficeCard(OfficeLocation office) {
