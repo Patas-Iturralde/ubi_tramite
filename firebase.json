@@ -1,1 +1,56 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"tuguiapp-5364f","appId":"1:897832137391:android:71fec2565c47cc5929da5a","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"tuguiapp-5364f","appId":"1:897832137391:ios:9dc484de79fe602f29da5a","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"tuguiapp-5364f","configurations":{"android":"1:897832137391:android:71fec2565c47cc5929da5a","ios":"1:897832137391:ios:9dc484de79fe602f29da5a","web":"1:897832137391:web:ac7548e1309c17e129da5a"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "tuguiapp-5364f",
+          "appId": "1:897832137391:android:71fec2565c47cc5929da5a",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "tuguiapp-5364f",
+          "appId": "1:897832137391:ios:9dc484de79fe602f29da5a",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "tuguiapp-5364f",
+          "configurations": {
+            "android": "1:897832137391:android:71fec2565c47cc5929da5a",
+            "ios": "1:897832137391:ios:9dc484de79fe602f29da5a",
+            "web": "1:897832137391:web:ac7548e1309c17e129da5a"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|wasm|woff|woff2)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=31536000"
+          }
+        ]
+      }
+    ]
+  }
+}
