@@ -990,23 +990,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             title: const Text('Chat en Vivo'),
             onTap: () {
               Navigator.of(context).pop();
-              final roleAsync = ref.read(userRoleProvider);
-              roleAsync.whenData((role) {
-                if (role != UserRole.premium && role != UserRole.admin && role != UserRole.advisor) {
-                  // Usuario no premium, mostrar mensaje
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('El chat en vivo es una función Premium. Actualiza tu cuenta para acceder.'),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
-                } else {
-                  // Usuario premium, admin o advisor, permitir acceso
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ChatScreen()),
-                  );
-                }
-              });
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChatScreen()),
+              );
             },
           ),
           ListTile(

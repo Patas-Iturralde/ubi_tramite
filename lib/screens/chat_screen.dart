@@ -146,6 +146,60 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
       body: Column(
         children: [
+          // Banner de días restantes de prueba gratuita
+          ref.watch(userRoleProvider).when(
+            data: (role) {
+              final isPremium = role == UserRole.premium || role == UserRole.admin || role == UserRole.advisor;
+              if (isPremium) {
+                return const SizedBox.shrink();
+              }
+              return ref.watch(trialDaysRemainingProvider).when(
+                data: (remainingDays) {
+                  if (remainingDays == null || remainingDays <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryColor.withOpacity(0.1),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: AppColors.primaryColor.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.star,
+                          size: 18,
+                          color: AppColors.primaryColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          remainingDays == 1
+                              ? 'Último día de tu prueba gratuita'
+                              : 'Tienes $remainingDays días restantes de prueba gratuita',
+                          style: TextStyle(
+                            color: AppColors.primaryColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
           // Lista de mensajes
           Expanded(
             child: StreamBuilder<List<ChatMessage>>(
