@@ -19,10 +19,12 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _scheduleController = TextEditingController();
+  final _tramiteController = TextEditingController();
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   double? _selectedLatitude;
   double? _selectedLongitude;
+  final List<String> _tramites = [];
   
   bool _isLoading = false;
 
@@ -31,7 +33,24 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     _scheduleController.dispose();
+    _tramiteController.dispose();
     super.dispose();
+  }
+
+  void _addTramite() {
+    final tramite = _tramiteController.text.trim();
+    if (tramite.isNotEmpty && !_tramites.contains(tramite)) {
+      setState(() {
+        _tramites.add(tramite);
+        _tramiteController.clear();
+      });
+    }
+  }
+
+  void _removeTramite(int index) {
+    setState(() {
+      _tramites.removeAt(index);
+    });
   }
 
   /// Obtiene la ubicación actual del usuario
@@ -142,6 +161,7 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
         schedule: _scheduleController.text.trim(),
         latitude: _selectedLatitude!,
         longitude: _selectedLongitude!,
+        tramites: List.from(_tramites),
       );
 
       final officesNotifier = ref.read(officesProvider.notifier);
@@ -241,6 +261,65 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
                         return null;
                       },
                     ),
+                    const SizedBox(height: 16),
+
+                    // Trámites
+                    const Text(
+                      'Trámites disponibles',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _tramiteController,
+                            decoration: const InputDecoration(
+                              labelText: 'Agregar trámite',
+                              hintText: 'Ej: Sacar pasaporte',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.description),
+                            ),
+                            onFieldSubmitted: (_) => _addTramite(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _addTramite,
+                          icon: const Icon(Icons.add_circle),
+                          color: Colors.green,
+                          iconSize: 40,
+                          tooltip: 'Agregar trámite',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_tramites.isNotEmpty)
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _tramites.length,
+                          itemBuilder: (context, index) {
+                            return ListTile(
+                              dense: true,
+                              title: Text(_tramites[index]),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                onPressed: () => _removeTramite(index),
+                                tooltip: 'Eliminar trámite',
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     const SizedBox(height: 16),
 
                     // Horario de atención

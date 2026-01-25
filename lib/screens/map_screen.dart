@@ -1564,6 +1564,44 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                             ),
                           ],
                         ),
+                      if (office.tramites.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Trámites disponibles:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: office.tramites.take(5).map((tramite) {
+                            return Chip(
+                              label: Text(
+                                tramite,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              padding: EdgeInsets.zero,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            );
+                          }).toList(),
+                        ),
+                        if (office.tramites.length > 5)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'y ${office.tramites.length - 5} más...',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white60 : AppColors.lightGrey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -1613,7 +1651,25 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final nameCtrl = TextEditingController(text: office.name);
     final descCtrl = TextEditingController(text: office.description);
     final schedCtrl = TextEditingController(text: office.schedule ?? '');
+    final tramiteCtrl = TextEditingController();
+    final tramites = <String>[...office.tramites];
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    void addTramite(StateSetter setModalState) {
+      final tramite = tramiteCtrl.text.trim();
+      if (tramite.isNotEmpty && !tramites.contains(tramite)) {
+        setModalState(() {
+          tramites.add(tramite);
+          tramiteCtrl.clear();
+        });
+      }
+    }
+    
+    void removeTramite(int index, StateSetter setModalState) {
+      setModalState(() {
+        tramites.removeAt(index);
+      });
+    }
     Future<void> _pickSchedule() async {
       final now = TimeOfDay.now();
       final start = await showTimePicker(
@@ -1640,17 +1696,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-            left: 16,
-            right: 16,
-            top: 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+                left: 16,
+                right: 16,
+                top: 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
               Text('Editar oficina', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
               TextField(
@@ -1687,6 +1745,62 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 ),
               ),
               const SizedBox(height: 16),
+              // Sección de trámites
+              const Text(
+                'Trámites disponibles',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: tramiteCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Agregar trámite',
+                        hintText: 'Ej: Sacar pasaporte',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.description),
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => addTramite(setModalState),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () => addTramite(setModalState),
+                    icon: const Icon(Icons.add_circle),
+                    color: Colors.green,
+                    iconSize: 32,
+                    tooltip: 'Agregar trámite',
+                  ),
+                ],
+              ),
+              if (tramites.isNotEmpty)
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  margin: const EdgeInsets.only(top: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: tramites.length,
+                    itemBuilder: (context, index) {
+                      return ListTile(
+                        dense: true,
+                        title: Text(tramites[index]),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                          onPressed: () => removeTramite(index, setModalState),
+                          tooltip: 'Eliminar trámite',
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -1709,6 +1823,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           name: nameCtrl.text.trim(),
                           description: descCtrl.text.trim(),
                           schedule: schedCtrl.text.trim(),
+                          tramites: List.from(tramites),
                         );
                         final ok = await ref.read(officesProvider.notifier)
                             .addCustomOffice(updated);
@@ -1722,6 +1837,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               ),
             ],
           ),
+        );
+          },
         );
       },
     );

@@ -12,6 +12,7 @@ class OfficeLocation {
   final double latitude;
   final double longitude;
   final PlaceCategory category;
+  final List<String> tramites;
 
   /// Constructor. Si no se provee un 'id', se genera uno automáticamente.
   OfficeLocation({
@@ -22,7 +23,9 @@ class OfficeLocation {
     required this.latitude,
     required this.longitude,
     this.category = PlaceCategory.publicInstitutions,
-  }) : id = id ?? const Uuid().v4();
+    List<String>? tramites,
+  }) : id = id ?? const Uuid().v4(),
+       tramites = tramites ?? [];
 
   /// Crea una copia del objeto con la posibilidad de modificar algunos campos.
   OfficeLocation copyWith({
@@ -33,6 +36,7 @@ class OfficeLocation {
     double? latitude,
     double? longitude,
     PlaceCategory? category,
+    List<String>? tramites,
   }) {
     return OfficeLocation(
       id: id ?? this.id,
@@ -42,6 +46,7 @@ class OfficeLocation {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       category: category ?? this.category,
+      tramites: tramites ?? this.tramites,
     );
   }
 
@@ -55,11 +60,20 @@ class OfficeLocation {
       'latitude': latitude,
       'longitude': longitude,
       'category': category.storageValue,
+      'tramites': tramites,
     };
   }
 
   /// Crea un objeto OfficeLocation desde un Map (JSON). Requerido por la pantalla del mapa.
   factory OfficeLocation.fromJson(Map<String, dynamic> json) {
+    final tramitesData = json['tramites'];
+    List<String> tramites = [];
+    if (tramitesData != null) {
+      if (tramitesData is List) {
+        tramites = tramitesData.map((e) => e.toString()).toList();
+      }
+    }
+    
     return OfficeLocation(
       id: json['id'] as String?,
       name: json['name'] ?? '',
@@ -68,6 +82,7 @@ class OfficeLocation {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       category: PlaceCategoryX.fromStorageValue(json['category'] as String?),
+      tramites: tramites,
     );
   }
 
