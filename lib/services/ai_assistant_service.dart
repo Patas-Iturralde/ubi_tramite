@@ -44,9 +44,41 @@ class AiAssistantService {
     geo.Position? userLocation,
   }) async {
     try {
+      // PRIMERO: Buscar oficinas que tengan el trámite específico en su lista de trámites
+      final lowerMessage = userMessage.toLowerCase();
+      final messageWords = lowerMessage.split(' ').where((w) => w.length > 3).toList();
+      
+      // Buscar oficinas con coincidencias en trámites
+      final officesWithTramite = <OfficeLocation>[];
+      final otherOffices = <OfficeLocation>[];
+      
+      for (final office in offices) {
+        bool hasMatchingTramite = false;
+        for (final tramite in office.tramites) {
+          final lowerTramite = tramite.toLowerCase();
+          // Buscar coincidencias exactas o parciales
+          if (lowerTramite.contains(lowerMessage) || 
+              lowerMessage.contains(lowerTramite) ||
+              messageWords.any((word) => lowerTramite.contains(word)) ||
+              office.tramites.any((t) => t.toLowerCase().contains(lowerMessage))) {
+            hasMatchingTramite = true;
+            break;
+          }
+        }
+        
+        if (hasMatchingTramite) {
+          officesWithTramite.add(office);
+        } else {
+          otherOffices.add(office);
+        }
+      }
+      
+      // Si encontramos oficinas con el trámite específico, usar solo esas
+      final officesToUse = officesWithTramite.isNotEmpty ? officesWithTramite : otherOffices;
+      
       // Calcular distancias si hay ubicación del usuario
       final officesWithDistance = <Map<String, dynamic>>[];
-      for (final office in offices) {
+      for (final office in officesToUse) {
         double? distanceInKm;
         if (userLocation != null) {
           final distanceInMeters = geo.Geolocator.distanceBetween(
@@ -60,6 +92,7 @@ class AiAssistantService {
         officesWithDistance.add({
           'office': office,
           'distance': distanceInKm,
+          'hasTramite': officesWithTramite.contains(office),
         });
       }
 
@@ -72,10 +105,11 @@ class AiAssistantService {
         });
       }
 
-      // Crear lista de oficinas disponibles para el prompt con distancias
+      // Crear lista de oficinas disponibles para el prompt con distancias y trámites
       final officesList = officesWithDistance.map((item) {
         final office = item['office'] as OfficeLocation;
         final distance = item['distance'] as double?;
+        final hasTramite = item['hasTramite'] as bool? ?? false;
         String distanceText = '';
         if (distance != null) {
           if (distance < 1) {
@@ -84,7 +118,12 @@ class AiAssistantService {
             distanceText = ' (${distance.toStringAsFixed(1)} km de distancia)';
           }
         }
-        return '• ${office.name} - ${office.description}${office.schedule != null ? " (Horario: ${office.schedule})" : ""}$distanceText';
+        String tramitesText = '';
+        if (office.tramites.isNotEmpty) {
+          tramitesText = ' [Trámites disponibles: ${office.tramites.join(', ')}]';
+        }
+        String priorityMark = hasTramite ? ' ⭐ OFICINA CON TRÁMITE ESPECÍFICO' : '';
+        return '• ${office.name} - ${office.description}${office.schedule != null ? " (Horario: ${office.schedule})" : ""}$tramitesText$priorityMark$distanceText';
       }).join('\n');
 
       final prompt = '''
@@ -107,10 +146,12 @@ Analiza la consulta del usuario y determina el tipo de trámite:
 - Trámites de IDENTIDAD → Registro Civil
 
 **PASO 2: ANALIZAR CADA OFICINA EN LA LISTA**
-Para CADA oficina en la lista, lee COMPLETAMENTE su nombre Y descripción:
+Para CADA oficina en la lista, lee COMPLETAMENTE su nombre, descripción Y trámites disponibles:
 - NO te bases solo en el nombre, LEE la descripción completa
-- Busca palabras clave específicas en la descripción que coincidan con el tipo de trámite
-- PRIORIZA oficinas con coincidencias EXACTAS sobre coincidencias parciales
+- **MUY IMPORTANTE: Revisa la lista de "Trámites disponibles" de cada oficina**
+- Si el trámite que el usuario busca aparece en la lista de trámites de una oficina, esa oficina es ALTAMENTE RELEVANTE
+- Busca palabras clave específicas en la descripción Y en los trámites que coincidan con el tipo de trámite
+- PRIORIZA oficinas con coincidencias EXACTAS en los trámites sobre coincidencias parciales en la descripción
 
 **PASO 3: COINCIDENCIAS ESPECÍFICAS POR TIPO DE TRÁMITE**
 
@@ -144,9 +185,10 @@ Para TRÁMITES DE IDENTIDAD:
    - "Registro Civil"
 
 **PASO 4: PRIORIZACIÓN**
-1. PRIMERO: Oficinas con coincidencia EXACTA en nombre o descripción
-2. SEGUNDO: Oficinas con coincidencia parcial pero clara
-3. NO incluyas oficinas que NO tengan relación directa con el trámite
+1. PRIMERO Y MÁS IMPORTANTE: Oficinas que tienen el trámite específico en su lista de "Trámites disponibles"
+2. SEGUNDO: Oficinas con coincidencia EXACTA en nombre o descripción
+3. TERCERO: Oficinas con coincidencia parcial pero clara
+4. NO incluyas oficinas que NO tengan relación directa con el trámite
 
 **PASO 5: LISTAR RESULTADOS**
 - Lista TODAS las oficinas que encontraste relacionadas
@@ -169,13 +211,16 @@ FORMATO DE RESPUESTA:
 💡 **Recomendaciones:**
 [Consejos útiles para realizar el trámite]
 
-IMPORTANTE CRÍTICO: 
-- LEE COMPLETAMENTE la descripción de CADA oficina antes de decidir si es relevante
-- Para trámites de VEHÍCULOS, busca específicamente "ANT" o "Tránsito" en la descripción, NO incluyas GAD o municipios
-- Para trámites de TERRITORIO, busca "gestión territorial", "catastro", "municipio" o "GAD" en la descripción
-- PRIORIZA coincidencias exactas sobre coincidencias parciales
-- Si encuentras múltiples oficinas relacionadas, menciónalas todas
-- NO incluyas oficinas que NO tengan relación directa con el trámite específico
+IMPORTANTE CRÍTICO - REGLAS ESTRICTAS: 
+- **REGLA #1 - MÁS IMPORTANTE: SOLO recomienda oficinas que tengan el trámite específico en su lista de "Trámites disponibles"**
+- Si una oficina tiene el símbolo ⭐ OFICINA CON TRÁMITE ESPECÍFICO, esa oficina DEBE ser recomendada PRIMERO
+- Si NO hay oficinas con el trámite específico en su lista, entonces busca en descripciones, pero sé MUY selectivo
+- NO recomiendes oficinas genéricas (como GAD para trámites de territorio) si hay oficinas específicas disponibles
+- Para trámites de VEHÍCULOS, busca específicamente "ANT" o "Tránsito" en la descripción o trámites, NO incluyas GAD o municipios
+- Para trámites de TERRITORIO, busca "gestión territorial", "catastro", "municipio" o "GAD" en la descripción o trámites
+- Si el usuario pregunta por un trámite específico (ej: "visa", "pasaporte", "cédula"), SOLO recomienda oficinas que tengan ese trámite en su lista
+- Si NO encuentras oficinas con el trámite específico, di claramente que no hay oficinas registradas para ese trámite
+- NO inventes o asumas que una oficina maneja un trámite si no está en su lista de trámites disponibles
 
 Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones disponibles que sean realmente relevantes.
 ''';
@@ -184,17 +229,27 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
       final response = await _model.generateContent(content);
 
       // Obtener las oficinas encontradas (ordenadas por distancia si hay ubicación)
+      // Priorizar oficinas que tienen el trámite específico
       final foundOffices = officesWithDistance.map((item) => item['office'] as OfficeLocation).toList();
+      final officesWithTramiteList = officesWithDistance
+          .where((item) => (item['hasTramite'] as bool? ?? false))
+          .map((item) => item['office'] as OfficeLocation)
+          .toList();
       
       if (response.text != null && response.text!.isNotEmpty) {
         // Buscar oficinas mencionadas en la respuesta del AI
         final mentionedOffices = _extractOfficesFromResponse(response.text!, foundOffices);
+        // Si hay oficinas con el trámite específico, priorizarlas
+        final finalOffices = officesWithTramiteList.isNotEmpty 
+            ? officesWithTramiteList 
+            : (mentionedOffices.isNotEmpty ? mentionedOffices : foundOffices);
         return OfficeSearchResult(
           response: response.text!,
-          foundOffices: mentionedOffices.isNotEmpty ? mentionedOffices : foundOffices,
+          foundOffices: finalOffices,
         );
       } else {
-        final officesList = foundOffices;
+        // Usar oficinas con trámite específico si existen, sino usar todas
+        final officesList = officesWithTramiteList.isNotEmpty ? officesWithTramiteList : foundOffices;
         final fallbackResponse = _getFallbackResponse(userMessage, officesList, userLocation: userLocation);
         return OfficeSearchResult(
           response: fallbackResponse,
@@ -221,6 +276,19 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     for (final office in allOffices) {
       final officeName = office.name.toLowerCase();
       final officeDesc = office.description.toLowerCase();
+      final officeTramites = office.tramites.map((t) => t.toLowerCase()).toList();
+      
+      // PRIORIDAD: Buscar si algún trámite de la oficina aparece en la respuesta
+      bool tramiteFound = false;
+      for (final tramite in officeTramites) {
+        if (lowerResponse.contains(tramite)) {
+          foundOffices.add(office);
+          tramiteFound = true;
+          break;
+        }
+      }
+      
+      if (tramiteFound) continue;
       
       // Buscar si el nombre completo de la oficina aparece en la respuesta
       if (lowerResponse.contains(officeName)) {
@@ -283,7 +351,21 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     for (final office in offices) {
       final officeName = office.name.toLowerCase();
       final officeDesc = office.description.toLowerCase();
+      final officeTramites = office.tramites.map((t) => t.toLowerCase()).toList();
       int score = 0;
+      
+      // PRIORIDAD MÁXIMA: Buscar coincidencias en los trámites de la oficina
+      for (final tramite in officeTramites) {
+        for (final keyword in keywords) {
+          if (tramite.contains(keyword) || keyword.contains(tramite)) {
+            score += 15; // Puntuación muy alta para coincidencias en trámites
+          }
+        }
+        // También buscar directamente en el query
+        if (lowerQuery.contains(tramite) || tramite.contains(lowerQuery)) {
+          score += 15;
+        }
+      }
       
       // Priorización especial para trámites de vehículos
       if (isVehicleQuery) {
@@ -359,6 +441,19 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
           if (officeName.contains(word) || officeDesc.contains(word)) {
             score += 1;
           }
+          // Buscar también en los trámites
+          for (final tramite in officeTramites) {
+            if (tramite.contains(word) || word.contains(tramite)) {
+              score += 3; // Puntuación alta para coincidencias directas en trámites
+            }
+          }
+        }
+      }
+      
+      // Buscar el query completo en los trámites (para casos como "visa", "pasaporte", etc.)
+      for (final tramite in officeTramites) {
+        if (tramite.contains(lowerQuery) || lowerQuery.contains(tramite)) {
+          score += 20; // Puntuación muy alta para coincidencias exactas
         }
       }
       
@@ -396,9 +491,12 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
       'matrícula': ['ant', 'agencia nacional de tránsito', 'tránsito', 'vehículo', 'automotor'],
       'trámite': ['ant', 'agencia nacional de tránsito'], // Contexto adicional
       
-      // Trámites de identidad
+      // Trámites de identidad y migración
       'cédula': ['registro civil', 'identidad'],
       'pasaporte': ['migración', 'extranjería'],
+      'visa': ['migración', 'extranjería', 'visa', 'consulado'],
+      'migración': ['migración', 'extranjería', 'visa', 'pasaporte'],
+      'extranjería': ['migración', 'extranjería', 'visa'],
       
       // Trámites de impuestos
       'impuesto': ['sri', 'servicio de rentas internas', 'tributario', 'fiscal', 'rentas'],
@@ -447,18 +545,35 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     List<OfficeLocation> offices, {
     geo.Position? userLocation,
   }) {
-    final matchingOffices = searchOfficesByKeywords(userMessage, offices);
+    // Primero buscar oficinas que tengan el trámite específico en su lista
+    final lowerMessage = userMessage.toLowerCase();
+    final messageWords = lowerMessage.split(' ').where((w) => w.length > 3).toList();
+    
+    final officesWithTramite = offices.where((office) {
+      return office.tramites.any((tramite) {
+        final lowerTramite = tramite.toLowerCase();
+        return lowerTramite.contains(lowerMessage) || 
+               lowerMessage.contains(lowerTramite) ||
+               messageWords.any((word) => lowerTramite.contains(word));
+      });
+    }).toList();
+    
+    // Si encontramos oficinas con el trámite específico, usar solo esas
+    final matchingOffices = officesWithTramite.isNotEmpty 
+        ? officesWithTramite 
+        : searchOfficesByKeywords(userMessage, offices);
     
     if (matchingOffices.isEmpty) {
       return '''
 🤖 **Asistente de Trámites**
 
-No encontré oficinas específicas registradas para tu consulta: "$userMessage"
+No encontré oficinas registradas que ofrezcan el trámite: "$userMessage"
 
 💡 **Sugerencias:**
 • Verifica que el trámite esté relacionado con oficinas gubernamentales
-• Intenta usar términos más específicos (ej: "trámite de vehículo", "licencia de conducir", "información territorial")
-• Revisa la lista completa de oficinas en el mapa
+• Intenta usar términos más específicos (ej: "trámite de vehículo", "licencia de conducir", "visa", "pasaporte")
+• Revisa la lista completa de oficinas y sus trámites disponibles en el mapa
+• Es posible que este trámite no esté registrado en el sistema aún
 
 Si necesitas ayuda con un trámite específico, describe mejor qué necesitas hacer.
 ''';
@@ -492,7 +607,7 @@ Si necesitas ayuda con un trámite específico, describe mejor qué necesitas ha
     }
     
     if (matchingOffices.isNotEmpty) {
-      // Crear lista detallada de todas las oficinas encontradas con distancias
+      // Crear lista detallada de todas las oficinas encontradas con distancias y trámites
       final officesList = officesWithDistance.map((item) {
         final o = item['office'] as OfficeLocation;
         final distance = item['distance'] as double?;
@@ -505,7 +620,11 @@ Si necesitas ayuda con un trámite específico, describe mejor qué necesitas ha
             distanceText = ' (${distance.toStringAsFixed(1)} km de distancia)';
           }
         }
-        return '• **${o.name}**${desc.isNotEmpty ? ' - $desc' : ''}$distanceText';
+        String tramitesText = '';
+        if (o.tramites.isNotEmpty) {
+          tramitesText = '\n  📋 Trámites: ${o.tramites.join(', ')}';
+        }
+        return '• **${o.name}**${desc.isNotEmpty ? ' - $desc' : ''}$tramitesText$distanceText';
       }).join('\n\n');
       
       // Determinar tipo de trámite para dar información más específica
