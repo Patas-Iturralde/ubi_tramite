@@ -55,12 +55,12 @@ class AiAssistantService {
       for (final office in offices) {
         bool hasMatchingTramite = false;
         for (final tramite in office.tramites) {
-          final lowerTramite = tramite.toLowerCase();
+          final lowerTramite = tramite.nombre.toLowerCase();
           // Buscar coincidencias exactas o parciales
           if (lowerTramite.contains(lowerMessage) || 
               lowerMessage.contains(lowerTramite) ||
               messageWords.any((word) => lowerTramite.contains(word)) ||
-              office.tramites.any((t) => t.toLowerCase().contains(lowerMessage))) {
+              office.tramites.any((t) => t.nombre.toLowerCase().contains(lowerMessage))) {
             hasMatchingTramite = true;
             break;
           }
@@ -120,7 +120,7 @@ class AiAssistantService {
         }
         String tramitesText = '';
         if (office.tramites.isNotEmpty) {
-          tramitesText = ' [Trámites disponibles: ${office.tramites.join(', ')}]';
+          tramitesText = ' [Trámites disponibles: ${office.tramites.map((t) => t.nombre).join(', ')}]';
         }
         String priorityMark = hasTramite ? ' ⭐ OFICINA CON TRÁMITE ESPECÍFICO' : '';
         return '• ${office.name} - ${office.description}${office.schedule != null ? " (Horario: ${office.schedule})" : ""}$tramitesText$priorityMark$distanceText';
@@ -276,7 +276,7 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     for (final office in allOffices) {
       final officeName = office.name.toLowerCase();
       final officeDesc = office.description.toLowerCase();
-      final officeTramites = office.tramites.map((t) => t.toLowerCase()).toList();
+      final officeTramites = office.tramites.map((t) => t.nombre.toLowerCase()).toList();
       
       // PRIORIDAD: Buscar si algún trámite de la oficina aparece en la respuesta
       bool tramiteFound = false;
@@ -351,7 +351,7 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     for (final office in offices) {
       final officeName = office.name.toLowerCase();
       final officeDesc = office.description.toLowerCase();
-      final officeTramites = office.tramites.map((t) => t.toLowerCase()).toList();
+      final officeTramites = office.tramites.map((t) => t.nombre.toLowerCase()).toList();
       int score = 0;
       
       // PRIORIDAD MÁXIMA: Buscar coincidencias en los trámites de la oficina
@@ -551,7 +551,7 @@ Máximo 400 palabras. Sé claro, conciso y útil. Lista TODAS las opciones dispo
     
     final officesWithTramite = offices.where((office) {
       return office.tramites.any((tramite) {
-        final lowerTramite = tramite.toLowerCase();
+        final lowerTramite = tramite.nombre.toLowerCase();
         return lowerTramite.contains(lowerMessage) || 
                lowerMessage.contains(lowerTramite) ||
                messageWords.any((word) => lowerTramite.contains(word));
@@ -622,7 +622,7 @@ Si necesitas ayuda con un trámite específico, describe mejor qué necesitas ha
         }
         String tramitesText = '';
         if (o.tramites.isNotEmpty) {
-          tramitesText = '\n  📋 Trámites: ${o.tramites.join(', ')}';
+          tramitesText = '\n  📋 Trámites: ${o.tramites.map((t) => t.nombre).join(', ')}';
         }
         return '• **${o.name}**${desc.isNotEmpty ? ' - $desc' : ''}$tramitesText$distanceText';
       }).join('\n\n');
