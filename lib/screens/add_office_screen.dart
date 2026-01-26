@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/office_location.dart';
+import '../models/tramite.dart';
 import '../providers/offices_provider.dart';
 import '../providers/location_provider.dart';
 import 'location_picker_screen.dart';
@@ -24,7 +25,7 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
   TimeOfDay? _endTime;
   double? _selectedLatitude;
   double? _selectedLongitude;
-  final List<String> _tramites = [];
+  final List<Tramite> _tramites = [];
   
   bool _isLoading = false;
 
@@ -38,10 +39,10 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
   }
 
   void _addTramite() {
-    final tramite = _tramiteController.text.trim();
-    if (tramite.isNotEmpty && !_tramites.contains(tramite)) {
+    final nombre = _tramiteController.text.trim();
+    if (nombre.isNotEmpty && !_tramites.any((t) => t.nombre == nombre)) {
       setState(() {
-        _tramites.add(tramite);
+        _tramites.add(Tramite(nombre: nombre));
         _tramiteController.clear();
       });
     }
@@ -51,6 +52,90 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
     setState(() {
       _tramites.removeAt(index);
     });
+  }
+  
+  void _editTramite(int index) async {
+    final tramite = _tramites[index];
+    final nombreCtrl = TextEditingController(text: tramite.nombre);
+    final costoCtrl = TextEditingController(text: tramite.costo ?? '');
+    final descCtrl = TextEditingController(text: tramite.descripcion ?? '');
+    final requisitosCtrl = TextEditingController(text: tramite.requisitos.join('\n'));
+    
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar trámite'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre del trámite',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: costoCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Costo (ej: Gratis, \$10.00, Variable)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: requisitosCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Requisitos (uno por línea)',
+                    border: OutlineInputBorder(),
+                    helperText: 'Escribe cada requisito en una línea separada',
+                  ),
+                  maxLines: 5,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final requisitos = requisitosCtrl.text
+                    .split('\n')
+                    .map((r) => r.trim())
+                    .where((r) => r.isNotEmpty)
+                    .toList();
+                
+                setState(() {
+                  _tramites[index] = Tramite(
+                    nombre: nombreCtrl.text.trim(),
+                    costo: costoCtrl.text.trim().isEmpty ? null : costoCtrl.text.trim(),
+                    descripcion: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                    requisitos: requisitos,
+                  );
+                });
+                Navigator.of(context).pop();
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Obtiene la ubicación actual del usuario
@@ -161,7 +246,7 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
         schedule: _scheduleController.text.trim(),
         latitude: _selectedLatitude!,
         longitude: _selectedLongitude!,
-        tramites: List.from(_tramites),
+        tramites: _tramites,
       );
 
       final officesNotifier = ref.read(officesProvider.notifier);
@@ -308,13 +393,30 @@ class _AddOfficeScreenState extends ConsumerState<AddOfficeScreen> {
                           shrinkWrap: true,
                           itemCount: _tramites.length,
                           itemBuilder: (context, index) {
+                            final tramite = _tramites[index];
                             return ListTile(
                               dense: true,
-                              title: Text(_tramites[index]),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                onPressed: () => _removeTramite(index),
-                                tooltip: 'Eliminar trámite',
+                              title: Text(tramite.nombre),
+                              subtitle: tramite.costo != null
+                                  ? Text(
+                                      'Costo: ${tramite.costo}',
+                                      style: const TextStyle(fontSize: 11),
+                                    )
+                                  : null,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 18),
+                                    onPressed: () => _editTramite(index),
+                                    tooltip: 'Editar trámite',
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                    onPressed: () => _removeTramite(index),
+                                    tooltip: 'Eliminar trámite',
+                                  ),
+                                ],
                               ),
                             );
                           },

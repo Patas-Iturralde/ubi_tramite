@@ -12,6 +12,7 @@ import 'package:tugui_app/screens/chat_screen.dart';
 import 'package:tugui_app/screens/ai_assistant_screen.dart';
 
 import '../models/office_location.dart';
+import '../models/tramite.dart';
 import '../providers/location_provider.dart';
 import '../models/place_category.dart';
 import '../providers/offices_provider.dart';
@@ -508,6 +509,97 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       ],
                     ),
                   ),
+                  if (office.tramites.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      'Trámites disponibles:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: titleColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...office.tramites.map((tramite) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: isDark ? Colors.white10 : Colors.grey[300]!,
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              _showTramiteDetailsDialog(tramite);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          tramite.nombre,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: titleColor,
+                                          ),
+                                        ),
+                                        if (tramite.costo != null) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.attach_money,
+                                                size: 14,
+                                                color: AppColors.secondaryColor,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                tramite.costo!,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.secondaryColor,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (tramite.requisitos.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${tramite.requisitos.length} requisito${tramite.requisitos.length == 1 ? '' : 's'}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: textColor.withOpacity(0.7),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 16,
+                                    color: textColor.withOpacity(0.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ],
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -1259,10 +1351,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     
     for (final office in _offices) {
       for (final tramite in office.tramites) {
-        if (!tramitesMap.containsKey(tramite)) {
-          tramitesMap[tramite] = [];
+        final nombreTramite = tramite.nombre;
+        if (!tramitesMap.containsKey(nombreTramite)) {
+          tramitesMap[nombreTramite] = [];
         }
-        tramitesMap[tramite]!.add(office);
+        tramitesMap[nombreTramite]!.add(office);
       }
     }
     
@@ -1822,7 +1915,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           children: office.tramites.take(5).map((tramite) {
                             return Chip(
                               label: Text(
-                                tramite,
+                                tramite.nombre,
                                 style: const TextStyle(fontSize: 11),
                               ),
                               padding: EdgeInsets.zero,
@@ -1894,14 +1987,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     final descCtrl = TextEditingController(text: office.description);
     final schedCtrl = TextEditingController(text: office.schedule ?? '');
     final tramiteCtrl = TextEditingController();
-    final tramites = <String>[...office.tramites];
+    final tramites = <Tramite>[...office.tramites];
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
     void addTramite(StateSetter setModalState) {
-      final tramite = tramiteCtrl.text.trim();
-      if (tramite.isNotEmpty && !tramites.contains(tramite)) {
+      final nombre = tramiteCtrl.text.trim();
+      if (nombre.isNotEmpty && !tramites.any((t) => t.nombre == nombre)) {
         setModalState(() {
-          tramites.add(tramite);
+          tramites.add(Tramite(nombre: nombre));
           tramiteCtrl.clear();
         });
       }
@@ -1911,6 +2004,91 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       setModalState(() {
         tramites.removeAt(index);
       });
+    }
+    
+    void editTramite(int index, StateSetter setModalState) async {
+      final tramite = tramites[index];
+      final nombreCtrl = TextEditingController(text: tramite.nombre);
+      final costoCtrl = TextEditingController(text: tramite.costo ?? '');
+      final descCtrl = TextEditingController(text: tramite.descripcion ?? '');
+      final requisitosCtrl = TextEditingController(text: tramite.requisitos.join('\n'));
+      
+      await showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF232323) : Colors.white,
+            title: const Text('Editar trámite'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nombreCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del trámite',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: costoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Costo (ej: Gratis, \$10.00, Variable)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: descCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Descripción (opcional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: requisitosCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Requisitos (uno por línea)',
+                      border: OutlineInputBorder(),
+                      helperText: 'Escribe cada requisito en una línea separada',
+                    ),
+                    maxLines: 5,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final requisitos = requisitosCtrl.text
+                      .split('\n')
+                      .map((r) => r.trim())
+                      .where((r) => r.isNotEmpty)
+                      .toList();
+                  
+                  setModalState(() {
+                    tramites[index] = Tramite(
+                      nombre: nombreCtrl.text.trim(),
+                      costo: costoCtrl.text.trim().isEmpty ? null : costoCtrl.text.trim(),
+                      descripcion: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                      requisitos: requisitos,
+                    );
+                  });
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Guardar'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     Future<void> _pickSchedule() async {
       final now = TimeOfDay.now();
@@ -2020,7 +2198,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
               ),
               if (tramites.isNotEmpty)
                 Container(
-                  constraints: const BoxConstraints(maxHeight: 150),
+                  constraints: const BoxConstraints(maxHeight: 200),
                   margin: const EdgeInsets.only(top: 8),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey[300]!),
@@ -2030,13 +2208,30 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                     shrinkWrap: true,
                     itemCount: tramites.length,
                     itemBuilder: (context, index) {
+                      final tramite = tramites[index];
                       return ListTile(
                         dense: true,
-                        title: Text(tramites[index]),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                          onPressed: () => removeTramite(index, setModalState),
-                          tooltip: 'Eliminar trámite',
+                        title: Text(tramite.nombre),
+                        subtitle: tramite.costo != null
+                            ? Text(
+                                'Costo: ${tramite.costo}',
+                                style: const TextStyle(fontSize: 11),
+                              )
+                            : null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 18),
+                              onPressed: () => editTramite(index, setModalState),
+                              tooltip: 'Editar trámite',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                              onPressed: () => removeTramite(index, setModalState),
+                              tooltip: 'Eliminar trámite',
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -2065,7 +2260,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                           name: nameCtrl.text.trim(),
                           description: descCtrl.text.trim(),
                           schedule: schedCtrl.text.trim(),
-                          tramites: List.from(tramites),
+                          tramites: tramites,
                         );
                         final ok = await ref.read(officesProvider.notifier)
                             .addCustomOffice(updated);
@@ -2083,6 +2278,162 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           },
         );
       },
+    );
+  }
+
+  /// Diálogo para mostrar los detalles completos de un trámite (requisitos y costos)
+  void _showTramiteDetailsDialog(Tramite tramite) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF232323) : Colors.white;
+    final titleColor = isDark ? Colors.white : AppColors.darkBlue;
+    final textColor = isDark ? Colors.white70 : Colors.black87;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: bg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primaryColor.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.description,
+                color: AppColors.primaryColor,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                tramite.nombre,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: titleColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (tramite.descripcion != null && tramite.descripcion!.isNotEmpty) ...[
+                Text(
+                  tramite.descripcion!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: textColor,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (tramite.costo != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.secondaryColor.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.attach_money,
+                        color: AppColors.secondaryColor,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Costo: ',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                      ),
+                      Text(
+                        tramite.costo!,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.secondaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (tramite.requisitos.isNotEmpty) ...[
+                Text(
+                  'Requisitos:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: titleColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...tramite.requisitos.map((requisito) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 6, right: 12),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            requisito,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: textColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ] else ...[
+                Text(
+                  'No se especificaron requisitos para este trámite.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: textColor.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
     );
   }
 

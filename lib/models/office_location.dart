@@ -1,6 +1,7 @@
 // Importa el paquete para generar IDs únicos
 import 'package:uuid/uuid.dart';
 import 'place_category.dart';
+import 'tramite.dart';
 
 /// Modelo de datos para representar una ubicación de oficina gubernamental
 class OfficeLocation {
@@ -12,7 +13,7 @@ class OfficeLocation {
   final double latitude;
   final double longitude;
   final PlaceCategory category;
-  final List<String> tramites;
+  final List<Tramite> tramites;
 
   /// Constructor. Si no se provee un 'id', se genera uno automáticamente.
   OfficeLocation({
@@ -23,7 +24,7 @@ class OfficeLocation {
     required this.latitude,
     required this.longitude,
     this.category = PlaceCategory.publicInstitutions,
-    List<String>? tramites,
+    List<Tramite>? tramites,
   }) : id = id ?? const Uuid().v4(),
        tramites = tramites ?? [];
 
@@ -36,7 +37,7 @@ class OfficeLocation {
     double? latitude,
     double? longitude,
     PlaceCategory? category,
-    List<String>? tramites,
+    List<Tramite>? tramites,
   }) {
     return OfficeLocation(
       id: id ?? this.id,
@@ -60,17 +61,25 @@ class OfficeLocation {
       'latitude': latitude,
       'longitude': longitude,
       'category': category.storageValue,
-      'tramites': tramites,
+      'tramites': tramites.map((t) => t.toJson()).toList(),
     };
   }
 
   /// Crea un objeto OfficeLocation desde un Map (JSON). Requerido por la pantalla del mapa.
   factory OfficeLocation.fromJson(Map<String, dynamic> json) {
     final tramitesData = json['tramites'];
-    List<String> tramites = [];
+    List<Tramite> tramites = [];
     if (tramitesData != null) {
       if (tramitesData is List) {
-        tramites = tramitesData.map((e) => e.toString()).toList();
+        for (final item in tramitesData) {
+          if (item is Map<String, dynamic>) {
+            // Nuevo formato: objeto Tramite con requisitos y costos
+            tramites.add(Tramite.fromJson(item));
+          } else if (item is String) {
+            // Formato antiguo: solo string (compatibilidad)
+            tramites.add(Tramite.fromString(item));
+          }
+        }
       }
     }
     
