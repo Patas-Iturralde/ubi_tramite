@@ -454,7 +454,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             color: Colors.transparent,
             child: Container(
               width: MediaQuery.of(context).size.width * 0.9,
-              padding: const EdgeInsets.all(16),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(16),
@@ -470,6 +472,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Contenido scrolleable
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                   Row(
                     children: [
                       Container(
@@ -622,44 +631,59 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
                       );
                     }).toList(),
                   ],
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: AppColors.primaryColor.withOpacity(0.5)),
-                            foregroundColor: AppColors.primaryColor,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: const Text('Cerrar'),
+                  ],
+                      ),
+                    ),
+                  ),
+                  // Botones fijos en la parte inferior
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                          color: isDark ? Colors.white10 : Colors.grey[300]!,
+                          width: 1,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            Navigator.of(context).pop();
-                            await _drawRouteToOffice(office);
-                            if (_sheetController.isAttached) {
-                              await _sheetController.animateTo(
-                                0.12,
-                                duration: const Duration(milliseconds: 250),
-                                curve: Curves.easeOutCubic,
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.alt_route),
-                          label: const Text('Ir'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.secondaryColor,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: AppColors.primaryColor.withOpacity(0.5)),
+                              foregroundColor: AppColors.primaryColor,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: const Text('Cerrar'),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              Navigator.of(context).pop();
+                              await _drawRouteToOffice(office);
+                              if (_sheetController.isAttached) {
+                                await _sheetController.animateTo(
+                                  0.12,
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeOutCubic,
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.alt_route),
+                            label: const Text('Ir'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.secondaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1497,6 +1521,59 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             child: const Icon(Icons.my_location, color: AppColors.white),
           ),
         ),
+        // Botones de acción (limpiar ruta y agregar oficina) - solo para admins
+        Consumer(builder: (context, ref, _) {
+          final roleAsync = ref.watch(userRoleProvider);
+          final isAdmin = roleAsync.maybeWhen(
+            data: (r) => r.toString().contains('admin'),
+            orElse: () => false,
+          );
+          return Positioned(
+            top: 55,
+            right: 5,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Limpiar ruta si existe
+                if (_googlePolylines.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: FloatingActionButton(
+                      heroTag: 'clearRouteFabWeb',
+                      tooltip: 'Limpiar ruta',
+                      onPressed: () {
+                        setState(() {
+                          _googlePolylines = {};
+                          _selectedOfficeForRoute = null;
+                          _routeEtaText = null;
+                        });
+                        _etaTimer?.cancel();
+                      },
+                      backgroundColor: Colors.redAccent,
+                      child: const Icon(Icons.clear_all, color: Colors.white),
+                    ),
+                  ),
+                // Botón para agregar oficina (solo para admins)
+                if (isAdmin)
+                  FloatingActionButton(
+                    heroTag: 'addOfficeFabWeb',
+                    tooltip: 'Agregar oficina',
+                    onPressed: () async {
+                      await Navigator.of(context).push<bool>(
+                        MaterialPageRoute(builder: (context) => const AddOfficeScreen()),
+                      );
+                      if (mounted) {
+                        _updateGoogleMapsMarkers();
+                      }
+                    },
+                    backgroundColor: AppColors.secondaryColor,
+                    child: const Icon(Icons.add, color: AppColors.white),
+                  ),
+              ],
+            ),
+          );
+        }),
         // Panel inferior con oficinas
         Align(
           alignment: Alignment.bottomCenter,
