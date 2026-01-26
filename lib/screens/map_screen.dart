@@ -43,6 +43,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   MapboxMap? mapboxMap;
   GoogleMapController? _googleMapController; // Para Google Maps en web
   Set<Marker> _googleMarkers = {}; // Marcadores para Google Maps
+  Set<Polyline> _googlePolylines = {}; // Polylines para rutas en Google Maps
+  OfficeLocation? _selectedOfficeForRoute; // Oficina seleccionada para mostrar ruta
   PointAnnotationManager? _pointAnnotationManager;
   PolylineAnnotationManager? _polylineAnnotationManager;
   PointAnnotationManager? _routePointManager;
@@ -622,6 +624,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
 
   Future<void> _drawRouteToOffice(OfficeLocation office) async {
+    // En web, usar Google Maps
+    if (kIsWeb) {
+      await _drawRouteToOfficeGoogleMaps(office);
+      return;
+    }
+    
+    // En móvil, usar Mapbox
     if (mapboxMap == null) return;
     try {
       final position = await ref.read(locationProvider.notifier).getCurrentPosition();
@@ -1333,9 +1342,21 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       );
     }
 
-    // Actualizar marcadores cuando cambien las oficinas
+    // Actualizar marcadores cuando cambien las oficinas o la ubicación
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateGoogleMapsMarkers();
+      // Si la ubicación aún no está disponible, intentar obtenerla
+      if (_positionFuture == null) {
+        final future = ref.read(locationProvider.notifier).getCurrentPosition();
+        setState(() {
+          _positionFuture = future;
+        });
+        future.then((position) {
+          if (position != null && mounted) {
+            _updateGoogleMapsMarkers();
+          }
+        });
+      }
     });
 
     return Stack(
@@ -1350,11 +1371,22 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           ),
           onMapCreated: (GoogleMapController controller) {
             _googleMapController = controller;
-            _updateGoogleMapsMarkers();
-            // Centrar en ubicación del usuario si está disponible
-            _centerGoogleMapOnUserLocation();
+            // Esperar a que la ubicación esté disponible antes de actualizar marcadores
+            _positionFuture?.then((position) {
+              if (position != null && mounted) {
+                _updateGoogleMapsMarkers();
+                _centerGoogleMapOnUserLocation();
+              } else {
+                _updateGoogleMapsMarkers();
+              }
+            });
+            // Si no hay posición futura, actualizar de todas formas
+            if (_positionFuture == null) {
+              _updateGoogleMapsMarkers();
+            }
           },
           markers: _googleMarkers,
+          polylines: _googlePolylines,
           mapType: MapType.normal,
           myLocationButtonEnabled: false,
           zoomControlsEnabled: true,
@@ -1380,11 +1412,27 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     );
   }
 
-  /// Actualiza los marcadores de Google Maps con las oficinas
-  void _updateGoogleMapsMarkers() {
+  /// Actualiza los marcadores de Google Maps con las oficinas y ubicación del usuario
+  void _updateGoogleMapsMarkers() async {
     final officesState = ref.read(officesProvider);
     final newMarkers = <Marker>{};
 
+    // Agregar marcador de ubicación del usuario si está disponible
+    final position = await _positionFuture;
+    if (position != null) {
+      final userMarker = Marker(
+        markerId: const MarkerId('user_location'),
+        position: LatLng(position.latitude, position.longitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+        infoWindow: const InfoWindow(
+          title: 'Mi ubicación',
+          snippet: 'Tu ubicación actual',
+        ),
+      );
+      newMarkers.add(userMarker);
+    }
+
+    // Agregar marcadores de oficinas
     for (final office in officesState.offices) {
       final marker = Marker(
         markerId: MarkerId(office.id),
@@ -1417,7 +1465,96 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           GoogleMapsConfig.defaultZoom,
         ),
       );
+      // Actualizar marcadores para incluir la ubicación del usuario
+      _updateGoogleMapsMarkers();
     }
+  }
+
+  /// Dibuja la ruta a una oficina en Google Maps (para web)
+  Future<void> _drawRouteToOfficeGoogleMaps(OfficeLocation office) async {
+    if (_googleMapController == null) return;
+    
+    try {
+      final position = await _positionFuture;
+      if (position == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo obtener tu ubicación')),
+        );
+        return;
+      }
+
+      // Obtener coordenadas de la ruta
+      final coords = await DirectionsService.getRoute(
+        position.latitude,
+        position.longitude,
+        office.latitude,
+        office.longitude,
+      );
+
+      // Convertir coordenadas a LatLng para Google Maps
+      // Las coordenadas vienen como [lat, lng]
+      final polylinePoints = coords.map((coord) => LatLng(coord[0], coord[1])).toList();
+
+      // Crear polyline para la ruta
+      final polyline = Polyline(
+        polylineId: const PolylineId('route'),
+        points: polylinePoints,
+        color: AppColors.primaryColor,
+        width: 5,
+        patterns: [],
+      );
+
+      setState(() {
+        _googlePolylines = {polyline};
+        _selectedOfficeForRoute = office;
+      });
+
+      // Ajustar la cámara para mostrar toda la ruta
+      final bounds = _calculateBounds(polylinePoints);
+      await _googleMapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 100),
+      );
+
+      // Actualizar ETA
+      await _updateRouteEta(office);
+      _etaTimer?.cancel();
+      _etaTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+        await _updateRouteEta(office);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo trazar la ruta: $e')),
+        );
+      }
+    }
+  }
+
+  /// Calcula los límites del mapa para mostrar todos los puntos
+  LatLngBounds _calculateBounds(List<LatLng> points) {
+    if (points.isEmpty) {
+      return LatLngBounds(
+        southwest: const LatLng(0, 0),
+        northeast: const LatLng(0, 0),
+      );
+    }
+    
+    double minLat = points[0].latitude;
+    double maxLat = points[0].latitude;
+    double minLng = points[0].longitude;
+    double maxLng = points[0].longitude;
+
+    for (final point in points) {
+      minLat = minLat < point.latitude ? minLat : point.latitude;
+      maxLat = maxLat > point.latitude ? maxLat : point.latitude;
+      minLng = minLng < point.longitude ? minLng : point.longitude;
+      maxLng = maxLng > point.longitude ? maxLng : point.longitude;
+    }
+
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
   }
 
   /// Lista de oficinas para versión web
