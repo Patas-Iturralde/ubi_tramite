@@ -40,6 +40,7 @@ dependencies:
   
   # Mapping
   mapbox_maps_flutter: ^2.11.0
+  google_maps_flutter: ^2.5.0
   
   # Geolocation
   geolocator: ^10.1.0

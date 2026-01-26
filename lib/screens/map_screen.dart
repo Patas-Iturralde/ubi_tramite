@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 // SVG runtime rasterization removed; using PNG assets registration instead
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart' as geo;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:tugui_app/screens/admin_users_screen.dart';
 import 'package:tugui_app/screens/chat_screen.dart';
 import 'package:tugui_app/screens/ai_assistant_screen.dart';
@@ -18,6 +20,7 @@ import '../providers/offices_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/user_role.dart';
 import '../config/mapbox_config.dart';
+import '../config/google_maps_config.dart';
 import '../theme/app_colors.dart';
 import 'add_office_screen.dart';
 import '../services/auth_service.dart';
@@ -38,6 +41,8 @@ class MapScreen extends ConsumerStatefulWidget {
 
 class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateMixin {
   MapboxMap? mapboxMap;
+  GoogleMapController? _googleMapController; // Para Google Maps en web
+  Set<Marker> _googleMarkers = {}; // Marcadores para Google Maps
   PointAnnotationManager? _pointAnnotationManager;
   PolylineAnnotationManager? _polylineAnnotationManager;
   PointAnnotationManager? _routePointManager;
@@ -66,6 +71,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   List<OfficeLocation> _offices = [];
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _showTramites = false; // Toggle entre oficinas y trámites
+  bool _isSheetExpanded = false; // Estado del panel en web
   
   // Animación del panel (reemplazado por DraggableScrollableSheet)
 
@@ -117,12 +123,18 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   void initState() {
     super.initState();
     
-    // Inicializar el token de Mapbox antes de crear cualquier componente
-    MapboxOptions.setAccessToken(MapboxConfig.accessToken);
-    
-    _loadMarkerImage().then((_) {
+    // Solo inicializar Mapbox si NO estamos en web
+    if (!kIsWeb) {
+      // Inicializar el token de Mapbox antes de crear cualquier componente
+      MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+      
+      _loadMarkerImage().then((_) {
+        _initializeMap();
+      });
+    } else {
+      // En web, inicializar directamente sin Mapbox
       _initializeMap();
-    });
+    }
 
     // Disparar la obtención de ubicación después del primer frame
     // Usar múltiples niveles de delay para asegurar que se ejecute completamente fuera del ciclo de build
@@ -169,6 +181,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     _routePointManager = null;
     _pinClickListener = null;
     mapboxMap = null;
+    // Limpiar referencias a Google Maps
+    _googleMapController?.dispose();
+    _googleMapController = null;
+    _googleMarkers.clear();
     super.dispose();
   }
 
@@ -176,6 +192,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
 
   /// Carga la imagen del marcador desde los assets.
   Future<void> _loadMarkerImage() async {
+    if (kIsWeb) return; // No cargar en web
     try {
       final ByteData byteData = await rootBundle.load('assets/images/marker_icon.png');
       setState(() {
@@ -192,7 +209,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   /// Inicializa el mapa y los permisos
   Future<void> _initializeMap() async {
     try {
-      await _checkLocationPermissions();
+      if (!kIsWeb) {
+        // Solo verificar permisos en móvil
+        await _checkLocationPermissions();
+      }
       setState(() {
         _isLoading = false;
       });
@@ -1066,6 +1086,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         foregroundColor: AppColors.white,
         elevation: 0,
         centerTitle: true,
+        // Agregar botón para abrir drawer, especialmente importante en web
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: () {
+            _scaffoldKey.currentState?.openDrawer();
+          },
+          tooltip: 'Menú',
+        ),
+        automaticallyImplyLeading: false, // Desactivar el leading automático para tener control total
         actions: [
           // Mostrar login o logout según el estado de autenticación
           Consumer(
@@ -1139,23 +1168,25 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
       ),
       drawer: _buildDrawer(),
       body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(child: Text(_errorMessage!))
-                : Stack(
-                    children: [
-                      MapWidget(
-                        key: const ValueKey('ubimap'),
-                        cameraOptions: CameraOptions(
-                          center: Point(coordinates: Position(_defaultLongitude, _defaultLatitude)),
-                          zoom: _defaultZoom,
-                        ),
-                        styleUri: Theme.of(context).brightness == Brightness.dark
-                            ? MapboxConfig.darkStyle
-                            : MapboxConfig.defaultStyle,
-                        onMapCreated: _onMapCreated,
-                      ),
+        child: kIsWeb
+            ? _buildWebMapView()
+            : _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(child: Text(_errorMessage!))
+                    : Stack(
+                        children: [
+                          MapWidget(
+                            key: const ValueKey('ubimap'),
+                            cameraOptions: CameraOptions(
+                              center: Point(coordinates: Position(_defaultLongitude, _defaultLatitude)),
+                              zoom: _defaultZoom,
+                            ),
+                            styleUri: Theme.of(context).brightness == Brightness.dark
+                                ? MapboxConfig.darkStyle
+                                : MapboxConfig.defaultStyle,
+                            onMapCreated: _onMapCreated,
+                          ),
                       Positioned(
                         top: 55,
                         left: 5,
@@ -1272,6 +1303,237 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     }).toList()..sort((a, b) => (a['tramite'] as String).compareTo(b['tramite'] as String));
   }
 
+  /// Construye la vista del mapa para web usando Google Maps
+  Widget _buildWebMapView() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(_errorMessage!),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _errorMessage = null;
+                  _isLoading = true;
+                });
+                _initializeMap();
+              },
+              child: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Actualizar marcadores cuando cambien las oficinas
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateGoogleMapsMarkers();
+    });
+
+    return Stack(
+      children: [
+        GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: LatLng(
+              GoogleMapsConfig.defaultLatitude,
+              GoogleMapsConfig.defaultLongitude,
+            ),
+            zoom: GoogleMapsConfig.defaultZoom,
+          ),
+          onMapCreated: (GoogleMapController controller) {
+            _googleMapController = controller;
+            _updateGoogleMapsMarkers();
+            // Centrar en ubicación del usuario si está disponible
+            _centerGoogleMapOnUserLocation();
+          },
+          markers: _googleMarkers,
+          mapType: MapType.normal,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: true,
+        ),
+        // Botón para centrar en ubicación
+        Positioned(
+          top: 55,
+          left: 5,
+          child: FloatingActionButton(
+            heroTag: 'centerLocationFabWeb',
+            tooltip: 'Centrar en mi ubicación',
+            onPressed: _centerGoogleMapOnUserLocation,
+            backgroundColor: AppColors.primaryColor,
+            child: const Icon(Icons.my_location, color: AppColors.white),
+          ),
+        ),
+        // Panel inferior con oficinas
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: _buildOfficesDropdownButton(),
+        ),
+      ],
+    );
+  }
+
+  /// Actualiza los marcadores de Google Maps con las oficinas
+  void _updateGoogleMapsMarkers() {
+    final officesState = ref.read(officesProvider);
+    final newMarkers = <Marker>{};
+
+    for (final office in officesState.offices) {
+      final marker = Marker(
+        markerId: MarkerId(office.id),
+        position: LatLng(office.latitude, office.longitude),
+        infoWindow: InfoWindow(
+          title: office.name,
+          snippet: office.description,
+        ),
+        onTap: () {
+          _showOfficeInfoDialog(office);
+        },
+      );
+      newMarkers.add(marker);
+    }
+
+    setState(() {
+      _googleMarkers = newMarkers;
+    });
+  }
+
+  /// Centra el mapa de Google Maps en la ubicación del usuario
+  Future<void> _centerGoogleMapOnUserLocation() async {
+    if (_googleMapController == null) return;
+
+    final position = await _positionFuture;
+    if (position != null) {
+      await _googleMapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude, position.longitude),
+          GoogleMapsConfig.defaultZoom,
+        ),
+      );
+    }
+  }
+
+  /// Lista de oficinas para versión web
+  Widget _buildWebOfficesList() {
+    final officesState = ref.watch(officesProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final allTramites = _getAllTramites();
+
+    return Column(
+      children: [
+        // Toggle entre oficinas y trámites
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildToggleButton(
+                'Oficinas',
+                !_showTramites,
+                isDark,
+                () => setState(() => _showTramites = false),
+              ),
+              _buildToggleButton(
+                'Trámites',
+                _showTramites,
+                isDark,
+                () => setState(() => _showTramites = true),
+              ),
+            ],
+          ),
+        ),
+        // Buscador
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _searchQuery = v.trim()),
+            decoration: InputDecoration(
+              hintText: _showTramites ? 'Buscar trámites...' : 'Buscar oficinas...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF222222) : Colors.grey.shade100,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Lista de contenido
+        Expanded(
+          child: officesState.isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+                  ),
+                )
+              : officesState.error != null
+                  ? Center(
+                      child: Text(
+                        'Error al cargar oficinas',
+                        style: TextStyle(color: AppColors.mediumBlue),
+                      ),
+                    )
+                  : _showTramites
+                      ? ListView(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          children: allTramites
+                              .where((t) {
+                                if (_searchQuery.isEmpty) return true;
+                                final q = _searchQuery.toLowerCase();
+                                return (t['tramite'] as String).toLowerCase().contains(q);
+                              })
+                              .map((t) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _buildTramiteCard(
+                                      t['tramite'] as String,
+                                      t['offices'] as List<OfficeLocation>,
+                                    ),
+                                  ))
+                              .toList(),
+                        )
+                      : officesState.offices.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No hay oficinas disponibles',
+                                style: TextStyle(color: AppColors.mediumBlue),
+                              ),
+                            )
+                          : ListView(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              children: officesState.offices
+                                  .where((o) {
+                                    if (_searchQuery.isEmpty) return true;
+                                    final q = _searchQuery.toLowerCase();
+                                    return o.name.toLowerCase().contains(q) ||
+                                           o.description.toLowerCase().contains(q);
+                                  })
+                                  .map((o) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 12),
+                                        child: _buildOfficeCard(o),
+                                      ))
+                                  .toList(),
+                            ),
+        ),
+      ],
+    );
+  }
+
   /// Botón desplegable de oficinas desde abajo
   Widget _buildOfficesDropdownButton() {
     final officesState = ref.watch(officesProvider);
@@ -1284,6 +1546,173 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
     
     final allTramites = _getAllTramites();
 
+    // En web, hacer el panel más interactivo con botones
+    if (kIsWeb) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          height: _isSheetExpanded ? MediaQuery.of(context).size.height * 0.65 : 120,
+          child: Container(
+            decoration: BoxDecoration(
+              color: sheetBg,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: sheetShadow,
+                  blurRadius: 15,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Barra superior clickeable para expandir/colapsar
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isSheetExpanded = !_isSheetExpanded;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: AppColors.lightGrey,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _showTramites ? 'Trámites Disponibles' : 'Oficinas Cercanas',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: titleColor,
+                                          ),
+                                    ),
+                                    Text(
+                                      _showTramites 
+                                          ? '${allTramites.length} trámites disponibles'
+                                          : '${officesState.offices.length} oficinas disponibles',
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: subtitleColor,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Botón para expandir/colapsar - más visible
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: AppColors.primaryColor,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: IconButton(
+                                  icon: Icon(
+                                    _isSheetExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                                    color: AppColors.primaryColor,
+                                    size: 24,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _isSheetExpanded = !_isSheetExpanded;
+                                    });
+                                  },
+                                  tooltip: _isSheetExpanded ? 'Colapsar' : 'Expandir',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Contenido expandible
+                if (_isSheetExpanded) ...[
+                  // Toggle entre oficinas y trámites
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildToggleButton(
+                          'Oficinas',
+                          !_showTramites,
+                          isDark,
+                          () => setState(() => _showTramites = false),
+                        ),
+                        _buildToggleButton(
+                          'Trámites',
+                          _showTramites,
+                          isDark,
+                          () => setState(() => _showTramites = true),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Buscador
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                      decoration: InputDecoration(
+                        hintText: _showTramites ? 'Buscar trámites...' : 'Buscar oficinas...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF222222) : Colors.grey.shade100,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Lista de contenido
+                  Expanded(
+                    child: _buildOfficesContent(officesState, allTramites, isDark, titleColor, subtitleColor),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Versión móvil con DraggableScrollableSheet
     return Align(
       alignment: Alignment.bottomCenter,
       child: DraggableScrollableSheet(
@@ -1468,6 +1897,96 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
   
   // Panel inferior ahora es DraggableScrollableSheet
+
+  /// Construye el contenido de la lista de oficinas/trámites
+  Widget _buildOfficesContent(OfficesState officesState, List<Map<String, dynamic>> allTramites, bool isDark, Color titleColor, Color subtitleColor) {
+    if (officesState.isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+          ),
+        ),
+      );
+    }
+    
+    if (officesState.error != null) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(
+          child: Text('Error al cargar oficinas',
+              style: TextStyle(color: AppColors.mediumBlue)),
+        ),
+      );
+    }
+    
+    if (_showTramites) {
+      // Mostrar trámites
+      final filteredTramites = allTramites.where((t) {
+        if (_searchQuery.isEmpty) return true;
+        final q = _searchQuery.toLowerCase();
+        return (t['tramite'] as String).toLowerCase().contains(q);
+      }).toList();
+      
+      if (filteredTramites.isEmpty) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No se encontraron trámites',
+                style: TextStyle(color: AppColors.mediumBlue)),
+          ),
+        );
+      }
+      
+      return ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: filteredTramites.map((t) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _buildTramiteCard(
+            t['tramite'] as String,
+            t['offices'] as List<OfficeLocation>,
+          ),
+        )).toList(),
+      );
+    }
+    
+    // Mostrar oficinas
+    if (officesState.offices.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No hay oficinas disponibles',
+              style: TextStyle(color: AppColors.mediumBlue)),
+        ),
+      );
+    }
+    
+    final filteredOffices = officesState.offices.where((o) {
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      return o.name.toLowerCase().contains(q) ||
+             o.description.toLowerCase().contains(q);
+    }).toList();
+    
+    if (filteredOffices.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No se encontraron oficinas',
+              style: TextStyle(color: AppColors.mediumBlue)),
+        ),
+      );
+    }
+    
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: filteredOffices.map((o) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _buildOfficeCard(o),
+      )).toList(),
+    );
+  }
 
   /// Botón toggle para alternar entre oficinas y trámites
   Widget _buildToggleButton(String label, bool isSelected, bool isDark, VoidCallback onTap) {
