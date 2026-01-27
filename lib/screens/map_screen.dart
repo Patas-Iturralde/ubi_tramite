@@ -1643,11 +1643,34 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
-            // Si solo hay una oficina, mostrar su información
-            if (offices.length == 1) {
-              _showOfficeInfoDialog(offices.first);
+            // Buscar el trámite específico en las oficinas
+            Tramite? tramiteObj;
+            OfficeLocation? selectedOffice;
+            
+            // Buscar el trámite en las oficinas
+            for (final office in offices) {
+              final foundTramite = office.tramites.firstWhere(
+                (t) => t.nombre == tramite,
+                orElse: () => Tramite(nombre: tramite),
+              );
+              if (foundTramite.nombre == tramite) {
+                tramiteObj = foundTramite;
+                selectedOffice = office;
+                break;
+              }
+            }
+            
+            // Si no se encontró, crear uno básico
+            tramiteObj ??= Tramite(nombre: tramite);
+            
+            // Si hay una sola oficina, mostrar directamente el trámite de esa oficina
+            if (offices.length == 1 && selectedOffice != null) {
+              _showTramiteDetailsDialog(tramiteObj, selectedOffice);
+            } else if (offices.length == 1) {
+              // Si hay una oficina pero no se encontró el trámite específico, mostrar el básico
+              _showTramiteDetailsDialog(tramiteObj, offices.first);
             } else {
-              // Si hay múltiples oficinas, mostrar un diálogo con todas
+              // Si hay múltiples oficinas, mostrar diálogo para seleccionar oficina
               _showTramiteOfficesDialog(tramite, offices);
             }
           },
@@ -1755,13 +1778,20 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
             itemCount: offices.length,
             itemBuilder: (context, index) {
               final office = offices[index];
+              // Buscar el trámite específico en esta oficina
+              final tramiteObj = office.tramites.firstWhere(
+                (t) => t.nombre == tramite,
+                orElse: () => Tramite(nombre: tramite),
+              );
+              
               return ListTile(
                 leading: const Icon(Icons.location_on, color: AppColors.primaryColor),
                 title: Text(office.name),
                 subtitle: Text(office.description),
                 onTap: () {
                   Navigator.of(context).pop();
-                  _showOfficeInfoDialog(office);
+                  // Mostrar primero el trámite con requisitos y costos
+                  _showTramiteDetailsDialog(tramiteObj, office);
                 },
               );
             },
@@ -2306,7 +2336,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
   }
 
   /// Diálogo para mostrar los detalles completos de un trámite (requisitos y costos)
-  void _showTramiteDetailsDialog(Tramite tramite) {
+  void _showTramiteDetailsDialog(Tramite tramite, [OfficeLocation? office]) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF232323) : Colors.white;
     final titleColor = isDark ? Colors.white : AppColors.darkBlue;
@@ -2452,6 +2482,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with TickerProviderStateM
           ),
         ),
         actions: [
+          if (office != null) ...[
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showOfficeInfoDialog(office);
+              },
+              icon: const Icon(Icons.location_on),
+              label: const Text('Ver oficina'),
+            ),
+          ],
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cerrar'),
